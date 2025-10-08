@@ -1,0 +1,11 @@
+# Your extension's UUID from metadata.json
+UUID="theme-manager-extension@lethil"
+
+# The full path to your project directory
+PROJECT_DIR="$HOME/dev/theme-manager-extension"
+
+# The directory where GNOME Shell looks for extensions
+EXTENSIONS_DIR="$HOME/.local/share/gnome-shell/extensions"
+
+# Create the symbolic link
+ln -s "$PROJECT_DIR" "$EXTENSIONS_DIR/$UUID"
