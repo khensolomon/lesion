@@ -1,11 +1,11 @@
 {
   "name": "Theme & Extension Manager",
   "description": "A simple way to enable or disable custom themes and extensions.",
-  "uuid": "theme-manager@example.com",
+  "uuid": "khensolomon@gmail.com",
   "shell-version": [
     "45",
     "46"
   ],
-  "url": "https://github.com/your-repo",
+  "url": "https://github.com/theme-manager-extension",
   "settings-schema": ""
 }
