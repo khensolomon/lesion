@@ -1,10 +1,10 @@
 # Your extension's UUID from metadata.json
-UUID="theme-manager-extension@lethil"
+UUID="theme-manager@lethil"
 
 cd ..
 CURRENT_DIR=$(pwd)
 # The full path to your project directory
-# PROJECT_DIR="$HOME/dev/theme-manager-extension"
+# PROJECT_DIR="$HOME/dev/theme-manager"
 PROJECT_DIR = $CURRENT_DIR
 
 # The directory where GNOME Shell looks for extensions
