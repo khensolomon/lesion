@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
+<wallpapers>
+  <wallpaper deleted="false">
+    <name>Lethil Wallpaper</name>
+    <filename>/home/khensolomon/dev/theme-manager-extension/wallpaper/image.jpg</filename>
+    <filename-dark>/home/khensolomon/dev/theme-manager-extension/wallpaper/image-dark.jpg</filename-dark>
+    <options>center</options> <!-- or 'scaled', 'stretched', 'center', 'span' -->
+  </wallpaper>
+</wallpapers>

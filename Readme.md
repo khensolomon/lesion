@@ -1,6 +1,6 @@
-# GNOME
+# Readme
 
-theme-manager-extension
+theme-manager
 
 GNOME development tools
 
@@ -20,10 +20,12 @@ A GNOME extension is essentially a directory
 Create the Symbolic Link
 
 ```bash
+cd scripts
 bash symbolic-link.sh
+bash user-dirs.sh
 
 # Clean Up Completely
-rm -rf ~/.local/share/gnome-shell/extensions/theme-manager-extension@lethil
+rm -rf ~/.local/share/gnome-shell/extensions/theme-manager@lethil
 ```
 
 ```bash
