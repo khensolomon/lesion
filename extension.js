@@ -1,11 +1,10 @@
-import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-export default class MyThemeManagerExtension extends Extension {
-    enable() {
-        console.log(`[${this.uuid}] enabled.`);
-    }
-
-    disable() {
-        console.log(`[${this.uuid}] disabled.`);
-    }
+export default class MyExtension extends Extension {
+  enable() {
+    // apply or toggle theme logic here
+  }
+  disable() {
+    // revert theme logic here
+  }
 }

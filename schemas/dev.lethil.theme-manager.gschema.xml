@@ -1,0 +1,9 @@
+<schemalist>
+  <schema id="dev.lethil.theme-manager" path="/dev/lethil/theme-manager/">
+    <key name="enable-custom-theme" type="b">
+      <default>false</default>
+      <summary>Enable custom theme</summary>
+      <description>Whether to enable or disable the custom theme.</description>
+    </key>
+  </schema>
+</schemalist>

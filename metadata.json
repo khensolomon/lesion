@@ -2,10 +2,9 @@
   "name": "Theme & Extension Manager",
   "description": "A simple way to enable or disable custom themes and extensions.",
   "uuid": "theme-manager@lethil",
-  "shell-version": [
-    "46"
-  ],
+  "shell-version": ["46", "47"],
   "url": "https://github.com/khensolomon/theme-manager",
-  "settings-schema": "",
-  "version": 1
+  "schemaId": "org.gnome.shell.extensions.theme-manager",
+  "applicationId": "dev.lethil.theme-manager",
+  "version": "1.0.1"
 }
