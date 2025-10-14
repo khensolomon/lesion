@@ -1,9 +1,35 @@
 <schemalist>
   <schema id="dev.lethil.theme-manager" path="/dev/lethil/theme-manager/">
+    <!-- Theme Settings -->
     <key name="enable-custom-theme" type="b">
       <default>false</default>
-      <summary>Enable custom theme</summary>
-      <description>Whether to enable or disable the custom theme.</description>
+      <summary>Enable custom theming</summary>
+      <description>Toggles all custom theming on or off.</description>
+    </key>
+
+    <key name="enable-custom-style" type="b">
+      <default>false</default>
+      <summary>Enable custom style</summary>
+      <description>Whether to load and apply all .css files from the ./style directory.</description>
+    </key>
+
+    <key name="active-theme" type="s">
+      <default>'Default'</default>
+      <summary>The name of the selected theme</summary>
+      <description>Stores the currently selected theme name.</description>
+    </key>
+    <key name="custom-css" type="s">
+      <default>''</default>
+      <summary>Custom CSS Snippet</summary>
+      <description>User-provided CSS that can be applied by the theme engine.</description>
+    </key>
+
+    <!-- Extension Settings -->
+    <key name="move-clock-extension-enabled" type="b">
+      <default>false</default>
+      <summary>Move Clock Extension Enabled</summary>
+      <description>Whether the 'Move Status Bar Clock to Right' extension is enabled.</description>
     </key>
   </schema>
 </schemalist>
+

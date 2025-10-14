@@ -1,0 +1,5 @@
+/* ./style/theme.css */
+/* Give all text entry fields a light blue background */
+entry, textview {
+    background-color: #eef7ff;
+}

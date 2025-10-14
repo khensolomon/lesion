@@ -45,7 +45,6 @@ gnome-extensions prefs theme-manager@lethil
 GSETTINGS_SCHEMA_DIR=~/.local/share/gnome-shell/extensions/theme-manager@lethil/schemas \
   gnome-extensions prefs theme-manager@lethil
 
-
 # Permanent shell alias
 alias prefs-theme="GSETTINGS_SCHEMA_DIR=~/.local/share/gnome-shell/extensions/theme-manager@lethil/schemas gnome-extensions prefs theme-manager@lethil"
 # then
@@ -61,6 +60,9 @@ chmod +x app.js
 # Launch
 ./app.js
 gjs --module ./app.js
+GSETTINGS_SCHEMA_DIR=schemas gjs --module ./app.js
+GSETTINGS_SCHEMA_DIR=schemas ./app.js
+
 ```
 
 ## app.desktop
@@ -122,5 +124,38 @@ sudo apt install gnome-extensions-app
 sudo apt install libglib2.0-bin
 # List its Contents and Filter for the File
 gresource list /usr/share/gnome-shell/org.gnome.Shell.gresource | grep "extension.js"
+
+gsettings set org.gnome.desktop.calendar show-weekdate true
+
+```
+
+Selector
+
+```CSS
+// Force All Corners Rounded
+window,
+decoration,
+.background,
+window.background,
+.window-frame {
+    border-radius: 12px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+# Force All Corners Flat (No Rounding)
+window,
+decoration,
+.background,
+window.background,
+.window-frame {
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+
 
 ```

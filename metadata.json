@@ -4,7 +4,7 @@
   "uuid": "theme-manager@lethil",
   "shell-version": ["46", "47"],
   "url": "https://github.com/khensolomon/theme-manager",
-  "schemaId": "org.gnome.shell.extensions.theme-manager",
+  "schemaId": "dev.lethil.theme-manager",
   "applicationId": "dev.lethil.theme-manager",
-  "version": "1.0.1"
+  "version": "1.0.2"
 }
