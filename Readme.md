@@ -1,160 +1,71 @@
-# Readme
+# Lesion - A GNOME Shell CSS Manager
 
-theme-manager
+Lesion is a simple yet powerful GNOME Shell extension that allows you to apply custom CSS stylesheets to your desktop, giving you the freedom to tweak and personalize your GNOME experience.
 
-GNOME development tools
+Whether you want to apply a few small fixes or completely overhaul your UI, Lesion provides a straightforward interface to manage both bundled and user-provided stylesheets.
 
-```bash
-sudo apt install gnome-shell-extensions gnome-shell-extension-manager gir1.2-gtk-4.0
-sudo apt install pkgconf libadwaita-1-dev gir1.2-adw-1
-sudo apt install gir1.2-adw-1
-sudo apt install gir1.2-gtk-4.0 gir1.2-adw-1
+## Features
 
+* **Bundled Styles:** Easily enable or disable stylesheets that come packaged with the extension.
+* **Custom User Styles:** Add your own .css files from anywhere on your computer.
+* **Flexible Management:** For each custom style, you can:
+  * Toggle it on or off.
+  * Open the file directly in your default text editor.
+  * Remove it from the list without deleting the original file.
+* **Modern UI:** A clean and simple preferences window built with Adwaita for a native look and feel.
 
-ls /usr/lib*/girepository-1.0/Adw-1.typelib
-ls -l /usr/lib/x86_64-linux-gnu/girepository-1.0/Adw-1.typelib
+## Installation
 
-echo 'export GI_TYPELIB_PATH=/usr/lib/x86_64-linux-gnu/girepository-1.0' >> ~/.bashrc
-source ~/.bashrc
-```
+There are three ways to install Lesion:
 
-A GNOME extension is essentially a directory
+1. GNOME Extensions Website (Recommended)
 
-```bash
-~/.local/share/gnome-shell/extensions/theme-manager@lethil/
-├── extension.js      # The main logic that runs in the background
-├── metadata.json     # Information about your extension (name, UUID, etc.)
-├── prefs.js          # The code for the settings window
-└── stylesheet.css
-```
+   * Visit the Lesion page on [extensions.gnome.org](https://extensions.gnome.org/) (once published).
+   * Click the on/off switch to install and enable the extension automatically.
 
-Test
+2. Manual Installation (from Release)
 
-```bash
-# compile it
-glib-compile-schemas schemas/
+   This method is for installing a pre-packaged .zip file from a release.
 
-# Check
-gnome-extensions list | grep theme-manager
-gsettings list-schemas | grep theme-manager
+   * Download the latest `lesion@lethil.zip` from the [GitHub Releases page](https://www.google.com/search?q=https://github.com/khensolomon/lesion/releases).
+   * Unzip the downloaded file.
+   * Copy the resulting lesion@lethil directory to \~/.local/share/gnome-shell/extensions/.
+   * Restart GNOME Shell (Alt + F2, type r, press Enter) or log out and back in.
+   * Enable the extension using the Extensions app.
 
-# Run
-gnome-extensions prefs theme-manager@lethil
+3. Installation from Source (for Development)
 
-# temporarily tells GSettings where your local schema lives
-GSETTINGS_SCHEMA_DIR=~/.local/share/gnome-shell/extensions/theme-manager@lethil/schemas \
-  gnome-extensions prefs theme-manager@lethil
+   This method is for developers who want to contribute or test the latest changes.
 
-# Permanent shell alias
-alias prefs-theme="GSETTINGS_SCHEMA_DIR=~/.local/share/gnome-shell/extensions/theme-manager@lethil/schemas gnome-extensions prefs theme-manager@lethil"
-# then
-prefs-theme
-```
+   1. Clone the repository:
 
-## app.js
+      ```bash
+      git clone https://github.com/khensolomon/lesion.git
 
-```bash
-# Make it executable
-chmod +x app.js
+      cd lesion
+      ```
 
-# Launch
-./app.js
-gjs --module ./app.js
-GSETTINGS_SCHEMA_DIR=schemas gjs --module ./app.js
-GSETTINGS_SCHEMA_DIR=schemas ./app.js
+   2. Compile the GSettings schemas:
 
-```
+      ```bash
+      glib-compile-schemas schemas/
+      ```
 
-## app.desktop
+   3. Link the extension directory to your local extensions folder:
 
-```bash
-# desktop launcher icon
-nano ~/.local/share/applications/com.lethil.ThemeManager.desktop
-```bash
+      ```bash
+      ln -s "$(pwd)" \~/.local/share/gnome-shell/extensions/lesion@lethil
+      ```
 
+   4. Restart GNOME Shell (`Alt` + `F2`, type `r`, press `Enter`).
+   5. Enable the extension using the Extensions app.
 
-```int
-[Desktop Entry]
-Name=Theme & Extension Manager
-Comment=Customize themes and extensions
-Exec=/home/YOURUSERNAME/path/to/app.js
-Icon=preferences-desktop-theme
-Terminal=false
-Type=Application
-StartupNotify=true
-Categories=GNOME;Settings;Utility;
-Exec=gjs --module /home/YOURUSERNAME/path/to/app.js
+## Usage
 
-Name=Theme Manager
-Exec=gjs -m /path/to/theme-manager/app.js
-Type=Application
-Icon=preferences-desktop-theme-symbolic
-Categories=Settings;GNOME;GTK;
+After installation, open the Extensions app, find "Lesion", and click the settings icon.
 
+From the preferences window, you can toggle the bundled styles in the "Bundled CSS Style" section or add your own files using the "Custom CSS Style" section. Any changes you make are applied in real-time.
 
-```bash
-# run:
-update-desktop-database ~/.local/share/applications/
-```
+## Contributing & Feedback
 
-Create the Symbolic Link
-
-```bash
-cd scripts
-bash symbolic-link.sh
-bash user-dirs.sh
-
-# Clean Up Completely
-rm -rf ~/.local/share/gnome-shell/extensions/theme-manager@lethil
-```
-
-```bash
-journalctl -f -o cat /usr/bin/gnome-shell
-
-gnome-shell --version
-
-sudo apt update
-sudo apt install --reinstall gnome-shell gnome-shell-common
-
-sudo apt install gnome-shell-extensions
-sudo apt install gnome-extensions-app
-
-
-sudo apt install libglib2.0-bin
-# List its Contents and Filter for the File
-gresource list /usr/share/gnome-shell/org.gnome.Shell.gresource | grep "extension.js"
-
-gsettings set org.gnome.desktop.calendar show-weekdate true
-
-```
-
-Selector
-
-```CSS
-// Force All Corners Rounded
-window,
-decoration,
-.background,
-window.background,
-.window-frame {
-    border-radius: 12px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-}
-
-# Force All Corners Flat (No Rounding)
-window,
-decoration,
-.background,
-window.background,
-.window-frame {
-    border-radius: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-}
-
-
-
-```
+Found a bug or have a feature request? Please [open an issue](https://www.google.com/search?q=https://github.com/khensolomon/lesion/issues) on GitHub\!
