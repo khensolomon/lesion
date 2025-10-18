@@ -1,10 +1,8 @@
 {
-  "name": "Theme & Extension Manager",
-  "description": "A simple way to enable or disable custom themes and extensions.",
-  "uuid": "theme-manager@lethil",
-  "shell-version": ["46", "47"],
-  "url": "https://github.com/khensolomon/theme-manager",
-  "schemaId": "dev.lethil.theme-manager",
-  "applicationId": "dev.lethil.theme-manager",
-  "version": "1.0.2"
+  "uuid": "lesion@lethil",
+  "name": "Lesion - CSS Manager",
+  "description": "Manage and apply custom CSS styles to GNOME Shell UI.",
+  "shell-version": ["46", "47", "48"],
+  "version": "1.0.3",
+  "settings-schema": "dev.lethil.lesion"
 }

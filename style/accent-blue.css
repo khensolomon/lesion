@@ -1,0 +1,15 @@
+/* accent-blue.css */
+.quick-settings,
+.popup-menu,
+.notification-banner {
+  background-color: rgba(0, 80, 200, 0.85) !important;
+  color: white !important;
+}
+
+#panel .panel-button {
+  color: #a5cfff !important;
+}
+
+#panel .panel-button:hover {
+  background-color: rgba(0, 120, 255, 0.4) !important;
+}

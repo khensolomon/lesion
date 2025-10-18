@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="dev.lethil.lesion" path="/dev/lethil/lesion/">
+    <key name="enabled-styles" type="as">
+      <summary>Enabled CSS file names</summary>
+      <description>List of CSS files in style/ that are currently applied to GNOME Shell.</description>
+      <default>[]</default>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,15 @@
+/* compact-panel.css */
+#panel {
+  height: 28px !important;
+  font-size: 11px !important;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+#panel .panel-button {
+  padding: 2px 6px !important;
+}
+
+#panel .panel-button .system-status-icon {
+  icon-size: 14px !important;
+}
