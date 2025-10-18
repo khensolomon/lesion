@@ -2,7 +2,8 @@
   "uuid": "lesion@lethil",
   "name": "Lesion - CSS Manager",
   "description": "Manage and apply custom CSS styles to GNOME Shell UI.",
-  "shell-version": ["46", "47", "48"],
-  "version": "1.0.3",
+  "shell-version": ["46", "47", "48", "49"],
+  "version": 3,
+  "url": "https://github.com/khensolomon/lesion",
   "settings-schema": "dev.lethil.lesion"
 }

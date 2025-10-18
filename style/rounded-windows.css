@@ -1,14 +1,7 @@
-/* rounded-windows.css */
-.popup-menu-boxpointer,
-.notification-banner,
-.modal-dialog,
-.dialog,
-.popup-menu,
-.quick-settings {
-  border-radius: 16px !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+/* Rounded Windows */
+.window-frame {
+    border-radius: 8px;          /* Works for St windows */
+    background-color: #2e2e2e;   /* Solid background */
 }
 
-.quick-settings {
-  background-color: rgba(45, 45, 45, 0.9) !important;
-}
+/* Avoid unsupported trailing values like 'px;' with extra chars */

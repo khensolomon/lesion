@@ -1,15 +1,12 @@
-/* compact-panel.css */
-#panel {
-  height: 28px !important;
-  font-size: 11px !important;
-  padding-top: 0;
-  padding-bottom: 0;
+/* Compact Panel */
+.panel {
+    min-height: 28px;          /* Use min-height instead of height */
+    padding: 0 6px;            /* Safe padding */
+    font-size: 11px;           /* No units issues */
 }
 
-#panel .panel-button {
-  padding: 2px 6px !important;
+.panel-button {
+    margin: 0 2px;
 }
 
-#panel .panel-button .system-status-icon {
-  icon-size: 14px !important;
-}
+/* Removed 'icon-size', not supported in St CSS */

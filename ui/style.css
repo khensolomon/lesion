@@ -1,0 +1,10 @@
+.menu-box {
+    min-width: 200px;
+    max-width: 300px;
+    background-color: #f5f5f5;
+}
+
+.vertical-separator {
+    background-color: rgba(0,0,0,0.12);
+    width: 1px;
+}

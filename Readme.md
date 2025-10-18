@@ -116,7 +116,6 @@ gnome-shell --version
 sudo apt update
 sudo apt install --reinstall gnome-shell gnome-shell-common
 
-
 sudo apt install gnome-shell-extensions
 sudo apt install gnome-extensions-app
 

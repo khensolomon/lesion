@@ -1,23 +1,25 @@
 'use strict';
 
-const Gio = imports.gi.Gio;
-const ExtensionUtils = imports.misc.extensionUtils;
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-function getSettings() {
-    const schema = 'dev.lethil.lesion';
-    const GioSSS = Gio.SettingsSchemaSource;
+export function getSettings() {
+    const extension = Extension.lookupByURL(import.meta.url);
+    return extension.getSettings('dev.lethil.lesion');
+}
 
-    const extension = ExtensionUtils.getCurrentExtension();
-    const schemaDir = extension.dir.get_child('schemas');
-    const schemaSrc = GioSSS.new_from_directory(
-        schemaDir.get_path(),
-        GioSSS.get_default(),
-        false
-    );
+export function listStyleFiles(extensionPath) {
+    const dir = Gio.File.new_for_path(GLib.build_filenamev([extensionPath, 'style']));
+    const enumerator = dir.enumerate_children('standard::*', Gio.FileQueryInfoFlags.NONE, null);
+    const files = [];
+    let info;
 
-    const schemaObj = schemaSrc.lookup(schema, true);
-    if (!schemaObj)
-        throw new Error(`[Lesion] Schema ${schema} not found`);
+    while ((info = enumerator.next_file(null)) !== null) {
+        const name = info.get_name();
+        if (name.endsWith('.css')) files.push(name);
+    }
 
-    return new Gio.Settings({ settings_schema: schemaObj });
+    enumerator.close(null);
+    return files;
 }

@@ -1,80 +1,87 @@
-'use strict';
+import St from 'gi://St';
+import Gio from 'gi://Gio';
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-const { Gio, GLib, St } = imports.gi;
-const Main = imports.ui.main;
-const ExtensionUtils = imports.misc.extensionUtils;
-
-const Me = ExtensionUtils.getCurrentExtension();
-const Settings = Me.imports.settings;
-
-class LesionExtension {
-    constructor() {
-        this._settings = Settings.getSettings();
-        this._styleDir = GLib.build_filenamev([Me.path, 'style']);
-        this._cssFiles = [];
-        this._monitor = null;
-    }
-
+export default class LesionExtension extends Extension {
     enable() {
-        this._loadAllCss();
-        this._monitorDirectory();
-        log('[Lesion] Enabled');
+        this._settings = this.getSettings('dev.lethil.lesion');
+        this._cssDir = `${this.path}/style`;
+        // We need to store the actual Gio.File objects to unload them later
+        this._stylesheetFiles = [];
+        this._applyStyles();
+
+        this._settingsChangedId = this._settings.connect(
+            'changed::enabled-styles',
+            () => this._applyStyles()
+        );
+
+        log('[Lesion] Extension enabled');
     }
 
     disable() {
-        this._removeAllCss();
-        if (this._monitor) {
-            this._monitor.cancel();
-            this._monitor = null;
+        if (this._settingsChangedId) {
+            this._settings.disconnect(this._settingsChangedId);
+            this._settingsChangedId = null;
         }
-        log('[Lesion] Disabled');
+
+        this._removeStyles();
+        this._settings = null;
+
+        log('[Lesion] Extension disabled');
     }
 
-    _loadAllCss() {
-        this._removeAllCss();
-        const dir = Gio.File.new_for_path(this._styleDir);
-        if (!dir.query_exists(null))
-            return;
+    _applyStyles() {
+        // It's safer to remove old styles before applying new ones
+        this._removeStyles();
 
-        const enumerator = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
-        let info;
-        while ((info = enumerator.next_file(null)) !== null) {
-            const name = info.get_name();
-            if (name.endsWith('.css')) {
-                const path = GLib.build_filenamev([this._styleDir, name]);
-                const file = Gio.File.new_for_path(path);
-                if (file.query_exists(null)) {
-                    const theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
-                    theme.load_stylesheet(file);
-                    this._cssFiles.push(file);
-                    log(`[Lesion] Loaded ${name}`);
-                }
+        const themeContext = St.ThemeContext.get_for_stage(global.stage);
+        const theme = themeContext.get_theme();
+        const enabledFiles = this._settings.get_strv('enabled-styles') ?? [];
+     
+        for (const cssFile of enabledFiles) {
+            const cssPath = `${this._cssDir}/${cssFile}`;
+            const file = Gio.File.new_for_path(cssPath);
+
+            if (!file.query_exists(null)) {
+                log(`[Lesion] Missing CSS file: ${cssPath}`);
+                continue;
             }
-        }
-    }
 
-    _removeAllCss() {
-        const theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
-        for (const file of this._cssFiles) {
             try {
-                theme.unload_stylesheet(file);
+                // Step 1: Load the stylesheet into the current theme object.
+                // This makes the theme aware of the file, but doesn't apply it yet.
+                theme.load_stylesheet(file);
+
+                // Keep a reference to the Gio.File object for removal on disable
+                this._stylesheetFiles.push(file);
+                log(`[Lesion] Loaded ${cssFile}`);
+
             } catch (e) {
-                logError(e);
+                log(`[Lesion] Error loading ${cssPath}: ${e}`);
             }
         }
-        this._cssFiles = [];
+
+        // ✅ Step 2: The CRITICAL missing step.
+        // We assign the modified theme back to the theme context. This forces
+        // the shell to re-evaluate its styles and apply our changes.
+        themeContext.set_theme(theme);
     }
 
-    _monitorDirectory() {
-        const dir = Gio.File.new_for_path(this._styleDir);
-        this._monitor = dir.monitor_directory(Gio.FileMonitorFlags.NONE, null);
-        this._monitor.connect('changed', () => {
-            log('[Lesion] Detected style change — reloading');
-            this._loadAllCss();
-        });
+    _removeStyles() {
+        const themeContext = St.ThemeContext.get_for_stage(global.stage);
+        const theme = themeContext.get_theme();
+
+        for (const file of this._stylesheetFiles) {
+            // Unload the stylesheet from the theme object
+            theme.unload_stylesheet(file);
+        }
+
+        // Reset the array
+        this._stylesheetFiles = [];
+
+        // Also critical: Apply the "cleaned" theme back to the shell
+        // to make the removal visible.
+        themeContext.set_theme(theme);
     }
 }
 
-function init() {
-    return new LesionExtension();
-}
