@@ -2,24 +2,39 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-export function getSettings() {
-    const extension = Extension.lookupByURL(import.meta.url);
-    return extension.getSettings('dev.lethil.lesion');
-}
-
+/**
+ * Lists all .css files in the style/ subdirectory of the extension.
+ * This is a utility function safe to be called from both extension.js and prefs.js.
+ *
+ * @param {string} extensionPath - The path to the extension's root directory.
+ * @returns {string[]} An array of CSS filenames.
+ */
 export function listStyleFiles(extensionPath) {
-    const dir = Gio.File.new_for_path(GLib.build_filenamev([extensionPath, 'style']));
-    const enumerator = dir.enumerate_children('standard::*', Gio.FileQueryInfoFlags.NONE, null);
-    const files = [];
-    let info;
+    const cssDir = GLib.build_filenamev([extensionPath, 'style']);
+    const dir = Gio.File.new_for_path(cssDir);
 
-    while ((info = enumerator.next_file(null)) !== null) {
-        const name = info.get_name();
-        if (name.endsWith('.css')) files.push(name);
+    // Gracefully handle the case where the style directory might not exist.
+    if (!dir.query_exists(null)) {
+        log(`[Lesion] Style directory not found at: ${cssDir}`);
+        return [];
     }
 
-    enumerator.close(null);
+    const files = [];
+    try {
+        const enumerator = dir.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+        let fileInfo;
+        while ((fileInfo = enumerator.next_file(null)) !== null) {
+            const name = fileInfo.get_name();
+            if (name.endsWith('.css')) {
+                files.push(name);
+            }
+        }
+        enumerator.close(null);
+    } catch (e) {
+        logError(e, '[Lesion] Could not list style files');
+    }
+
     return files;
 }
+
