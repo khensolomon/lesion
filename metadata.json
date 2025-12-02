@@ -4,7 +4,7 @@
   "description": "Demo extension with personalized settings",
   "version": 1,
   "settings-schema": "org.gnome.shell.extensions.lesion",
-  "version-name": "1.10-beta",
+  "version-name": "1.11-beta",
   "shell-version": ["46", "47"],
   "developer-name": "Khen Solomon Lethil",
   "schema-id": "dev.lethil.lesion",
