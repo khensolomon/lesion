@@ -66,6 +66,14 @@ After installation, open the Extensions app, find "Lesion", and click the settin
 
 From the preferences window, you can toggle the bundled styles in the "Bundled CSS Style" section or add your own files using the "Custom CSS Style" section. Any changes you make are applied in real-time.
 
+## Development
+
+```bash
+gjs ./app.js -m
+gjs ./ui/window-half-seperated.js
+gjs ~/.local/share/gnome-shell/extensions/lesion@lethil/prefs.js
+```
+
 ## Contributing & Feedback
 
 Found a bug or have a feature request? Please [open an issue](https://www.google.com/search?q=https://github.com/khensolomon/lesion/issues) on GitHub\!

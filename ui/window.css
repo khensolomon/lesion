@@ -1,0 +1,51 @@
+.navigation-sidebar {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.navigation-sidebar .list-row {
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
+    border-radius: 6px; /* Add rounded corners for a modern feel */
+}
+
+/* --- Add a hover effect to clickable rows --- */
+.navigation-sidebar .list-row:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* --- Style the selected row to make it obvious --- */
+.navigation-sidebar .list-row:selected {
+    background-color: @accent_color;
+    color: white;
+}
+
+/* --- Ensure the selected row's icon and label are also white --- */
+.navigation-sidebar .list-row:selected image,
+.navigation-sidebar .list-row:selected label {
+    color: white;
+}
+
+.menu-group-title {
+    font-size: 0.8rem;
+    font-weight: bold;
+    opacity: 0.7;
+    padding-top: 18px;
+    padding-bottom: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
+    text-transform: uppercase;
+    background-color: transparent; /* Explicitly non-interactive background */
+}
+
+flap > .separator, .sidebar.overlay-visible {
+    border-right: 1px solid @borders;
+}
+.sidebar {
+    background-color: @headerbar_bg_color;
+}
+.main-content {
+    background-color: @window_bg_color;
+}

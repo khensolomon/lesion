@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="adw" version="1"/>
+  <template class="ExampleWindow" parent="AdwApplicationWindow">
+    <property name="default-width">1000</property>
+    <property name="default-height">700</property>
+
+    <!-- 1. Define the main title bar for the entire window. This brings back the window controls. -->
+    <property name="titlebar">
+      <object class="AdwHeaderBar">
+        <child type="start">
+          <!-- 2. This button now controls the sidebar visibility. -->
+          <object class="GtkToggleButton" id="flap_toggle">
+            <property name="icon-name">open-menu-symbolic</property>
+          </object>
+        </child>
+        <child type="title">
+          <object class="AdwWindowTitle">
+            <property name="title">My App</property>
+            <property name="subtitle">GNOME UI Prototype</property>
+          </object>
+        </child>
+      </object>
+    </property>
+
+    <!-- 3. The Flap is now the main content of the window. -->
+    <property name="content">
+      <object class="AdwFlap" id="flap">
+        <!-- Bind the flap's visibility to the toggle button's state. -->
+        <property name="reveal-flap" bind-source="flap_toggle" bind-property="active" bind-flags="bidirectional"/>
+        <property name="flap">
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="width-request">280</property>
+            <style>
+              <!-- This class makes the sidebar background seamless with the header -->
+              <class name="sidebar"/>
+            </style>
+            <child>
+              <object class="GtkLabel">
+                <property name="label">Menu</property>
+                <property name="halign">start</property>
+                <property name="margin-top">12</property>
+                <property name="margin-bottom">12</property>
+                <property name="margin-start">12</property>
+                <property name="margin-end">12</property>
+                <style>
+                  <class name="title-2"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </property>
+        <property name="content">
+          <object class="GtkLabel">
+            <property name="label">Main Content Area</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <property name="vexpand">true</property>
+            <style>
+              <class name="title-1"/>
+            </style>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>
+

@@ -1,9 +1,22 @@
 {
-  "uuid": "lesion@lethil",
-  "name": "Lesion - CSS Manager",
-  "description": "Manage and apply custom CSS styles to GNOME Shell UI.",
-  "shell-version": ["46", "47", "48", "49"],
-  "version": 4,
+  "uuid": "personalized-lesion@example.com",
+  "name": "Lesion",
+  "description": "Demo extension with personalized settings",
+  "version": 1,
+  "settings-schema": "org.gnome.shell.extensions.lesion",
+  "version-name": "1.9-beta",
+  "shell-version": ["46", "47"],
+  "developer-name": "Khen Solomon Lethil",
+  "schema-id": "dev.lethil.lesion",
+  "debug":true,
+  "prefs-page": true,
   "url": "https://github.com/khensolomon/lesion",
-  "settings-schema": "dev.lethil.lesion"
+  "links": {
+      "issue": "issues",
+      "report": "issues/new",
+      "changelog": "blob/master/Changelog.md",
+      "license": "blob/master/LICENSE",
+      "MyOrdbok": "https://myordbok.com"
+  },
+  "license_type": 2
 }
