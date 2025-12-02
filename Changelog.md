@@ -17,3 +17,4 @@ Added
 - Enable or disable it with a toggle.
 - Open the file in the default editor.
 - Remove the file from the management list.
+- Centralizing Configuration

@@ -1,44 +1,13 @@
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
-import Gdk from 'gi://Gdk';
 import GLib from 'gi://GLib';
+import { AppConfig } from '../config.js'; // Import Unified Config
 
 export function createAboutUI(navigator, goToPage) {
     const page = new Adw.PreferencesPage();
 
-    // --- 0. LOAD METADATA ---
-    const currentDir = GLib.get_current_dir();
-    const metadataPath = GLib.build_filenamev([currentDir, 'metadata.json']);
-    
-    // Default values in case file is missing
-    let metadata = {
-        name: 'Demo',
-        version: '0.beta',
-        "developer-name": 'Lethil',
-        description: 'A demonstration of responsive sidebar and deep linking.',
-        url: '', // Base URL for relative links
-        links: {
-            "report-issue": "https://github.com",
-            "license": "LICENSE" 
-        }
-    };
-
-    try {
-        if (GLib.file_test(metadataPath, GLib.FileTest.EXISTS)) {
-            const [success, contents] = GLib.file_get_contents(metadataPath);
-            if (success) {
-                const decoder = new TextDecoder('utf-8');
-                const jsonString = decoder.decode(contents);
-                const loadedData = JSON.parse(jsonString);
-                // Merge loaded data into defaults
-                metadata = { ...metadata, ...loadedData };
-            }
-        } else {
-            console.warn(`metadata.json not found at ${metadataPath}, using defaults.`);
-        }
-    } catch (e) {
-        console.error('Error loading metadata.json:', e);
-    }
+    // Use the unified metadata
+    const metadata = AppConfig.metadata;
 
     // --- 1. HEADER SECTION ---
     const headerBox = new Gtk.Box({
@@ -50,24 +19,27 @@ export function createAboutUI(navigator, goToPage) {
     });
 
     // A. LOGO 
+    // Logic remains similar but relies on explicit paths or theme
+    // For standalone, we might still check the file, but for extensions,
+    // icons are usually handled by the theme installed by the extension.
+    const currentDir = GLib.get_current_dir();
     const iconPath = GLib.build_filenamev([currentDir, 'app', 'icon', 'icon.svg']);
-    let logoWidget;
     
-    if (GLib.file_test(iconPath, GLib.FileTest.EXISTS)) {
-        logoWidget = new Gtk.Image({
-            file: iconPath,
-            pixel_size: 96, 
-            margin_bottom: 12
-        });
+    let logoWidget;
+    // Simple check: if standalone & file exists, use file. Else use themed icon.
+    if (!AppConfig.isExtension && GLib.file_test(iconPath, GLib.FileTest.EXISTS)) {
+        logoWidget = new Gtk.Image({ file: iconPath, pixel_size: 96, margin_bottom: 12 });
     } else {
-        logoWidget = new Gtk.Image({
-            icon_name: 'application-x-executable',
+        // In extension mode, or fallback, assume icon is installed in theme
+        // or use a generic one
+        logoWidget = new Gtk.Image({ 
+            icon_name: 'application-x-executable', // or AppConfig.appId
             pixel_size: 96,
             margin_bottom: 12
         });
     }
 
-    // B. METADATA (Dynamic)
+    // B. METADATA
     const appName = new Gtk.Label({
         label: metadata.name,
         css_classes: ['title-1'], 
@@ -83,17 +55,17 @@ export function createAboutUI(navigator, goToPage) {
     });
 
     const developer = new Gtk.Label({
-        label: metadata["developer-name"],
+        label: metadata["developer-name"] || 'Unknown Developer',
         css_classes: ['heading'], 
     });
 
     const description = new Gtk.Label({
-        label: metadata.description,
+        label: metadata.description || '',
         justify: Gtk.Justification.CENTER,
         wrap: true,
         css_classes: ['body'],
         margin_top: 6,
-        max_width_chars: 40 // Prevent extremely wide text
+        max_width_chars: 40
     });
 
     headerBox.append(logoWidget);
@@ -106,9 +78,7 @@ export function createAboutUI(navigator, goToPage) {
     headerGroup.add(headerBox);
     page.add(headerGroup);
 
-
     // --- 2. DOCUMENTATION SECTION ---
-    // Only show if links exist
     if (metadata.links && Object.keys(metadata.links).length > 0) {
         const docGroup = new Adw.PreferencesGroup({
             title: 'Documentation',
@@ -116,10 +86,7 @@ export function createAboutUI(navigator, goToPage) {
         });
 
         const createLinkRow = (title, uri) => {
-            const row = new Adw.ActionRow({
-                title: title,
-                activatable: true
-            });
+            const row = new Adw.ActionRow({ title: title, activatable: true });
             
             row.add_suffix(new Gtk.Image({ 
                 icon_name: 'external-link-symbolic',
@@ -127,31 +94,40 @@ export function createAboutUI(navigator, goToPage) {
             }));
 
             row.connect('activated', () => {
-                Gtk.show_uri(null, uri, Gdk.CURRENT_TIME);
+                // MODERN API: Gtk.UriLauncher (GTK 4.10+)
+                // Replaces the deprecated Gtk.show_uri
+                try {
+                    const launcher = new Gtk.UriLauncher({ uri: uri });
+                    // launch() takes (parent, cancellable, callback)
+                    // We can pass null for parent/cancellable in simple cases
+                    launcher.launch(null, null, (obj, res) => {
+                        try {
+                            launcher.launch_finish(res);
+                        } catch (e) {
+                            console.warn(`Failed to launch URI ${uri}: ${e.message}`);
+                        }
+                    });
+                } catch (e) {
+                    console.error("Gtk.UriLauncher failed:", e);
+                }
             });
 
             return row;
         };
 
-        // Iterate over links in metadata
         Object.entries(metadata.links).forEach(([key, rawUrl]) => {
-            // 1. Smart URL Resolution
             let targetUrl = rawUrl;
-            
-            // Check if it is a full URL (http/https)
             const isFullUrl = rawUrl.startsWith('http://') || rawUrl.startsWith('https://');
 
             if (!isFullUrl && metadata.url) {
-                // Clean up slashes to avoid double slashes (e.g. url/ + /path)
                 const baseUrl = metadata.url.endsWith('/') ? metadata.url.slice(0, -1) : metadata.url;
                 const path = rawUrl.startsWith('/') ? rawUrl.slice(1) : rawUrl;
                 targetUrl = `${baseUrl}/${path}`;
             }
 
-            // 2. Format Title (e.g. "getting-started" -> "Getting Started")
             const title = key
-                .split(/[-_]/) // Split by hyphen or underscore
-                .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Capitalize
+                .split(/[-_]/)
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
 
             docGroup.add(createLinkRow(title, targetUrl));
