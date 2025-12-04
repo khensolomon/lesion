@@ -2,12 +2,17 @@ import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import { createUI, installLayout } from './app/window.js'; // Import helper
+import { createUI, installLayout } from './app/window.js';
 import { AppConfig } from './app/config.js';
+import { log } from './app/util/logger.js';
 
 export default class GnomeSplitViewPrefs extends ExtensionPreferences {
     fillPreferencesWindow(window) {
-        AppConfig.init(this.metadata, true);
+        // 1. Initialize Configuration
+        // 'this.path' is the directory of the extension, provided by GNOME Shell
+        AppConfig.init(this.metadata, this.path, true);
+
+        log("Preferences window opening...");
 
         window.set_default_size(
             AppConfig.defaults.window.width,
@@ -17,7 +22,6 @@ export default class GnomeSplitViewPrefs extends ExtensionPreferences {
         const ui = createUI();
         window.set_content(ui);
         
-        // NEW: Attach breakpoint logic explicitly to the preferences window
         installLayout(window, ui);
     }
 }

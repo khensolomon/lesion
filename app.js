@@ -7,8 +7,9 @@ import Gtk from 'gi://Gtk?version=4.0';
 import Gdk from 'gi://Gdk?version=4.0';
 import Adw from 'gi://Adw?version=1';
 import GLib from 'gi://GLib';
-import { createUI, installLayout } from './app/window.js'; // Import new helper
+import { createUI, installLayout } from './app/window.js';
 import { AppConfig } from './app/config.js'; 
+import { log, logError } from './app/util/logger.js'; // New Logger
 
 const app = new Adw.Application({
     application_id: AppConfig.defaults.id,
@@ -27,6 +28,7 @@ function loadLocalMetadata() {
             }
         }
     } catch (e) {
+        // We can't use our custom logger yet as Config isn't init!
         console.warn('Failed to load metadata.json:', e);
     }
     return {};
@@ -34,18 +36,23 @@ function loadLocalMetadata() {
 
 app.connect('activate', () => {
     const metadata = loadLocalMetadata();
-    AppConfig.init(metadata, false);
+    const currentDir = GLib.get_current_dir();
+
+    // 1. Init Config with Metadata AND Path
+    AppConfig.init(metadata, currentDir, false);
+
+    log("Application activating..."); // Will only show if "debug": true in metadata.json
+    log(`Schema ID: ${AppConfig.schemaId}`);
 
     const display = Gdk.Display.get_default();
     if (display) {
         const iconTheme = Gtk.IconTheme.get_for_display(display);
-        const currentDir = GLib.get_current_dir();
         iconTheme.add_search_path(currentDir);
     }
 
     const window = new Adw.ApplicationWindow({
         application: app,
-        title: AppConfig.metadata.name, 
+        title: AppConfig.name, 
         default_width: AppConfig.defaults.window.width,
         default_height: AppConfig.defaults.window.height,
         width_request: AppConfig.defaults.window.minWidth,
@@ -56,7 +63,6 @@ app.connect('activate', () => {
     const content = createUI();
     window.set_content(content);
     
-    // NEW: Attach breakpoint logic explicitly to this window
     installLayout(window, content);
 
     window.present();
