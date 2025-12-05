@@ -9,7 +9,7 @@ import Adw from 'gi://Adw?version=1';
 import GLib from 'gi://GLib';
 import { createUI, installLayout } from './app/window.js';
 import { AppConfig } from './app/config.js'; 
-import { log, logError } from './app/util/logger.js'; // New Logger
+import { log } from './app/util/logger.js';
 
 const app = new Adw.Application({
     application_id: AppConfig.defaults.id,
@@ -28,7 +28,6 @@ function loadLocalMetadata() {
             }
         }
     } catch (e) {
-        // We can't use our custom logger yet as Config isn't init!
         console.warn('Failed to load metadata.json:', e);
     }
     return {};
@@ -38,10 +37,9 @@ app.connect('activate', () => {
     const metadata = loadLocalMetadata();
     const currentDir = GLib.get_current_dir();
 
-    // 1. Init Config with Metadata AND Path
     AppConfig.init(metadata, currentDir, false);
 
-    log("Application activating..."); // Will only show if "debug": true in metadata.json
+    log("Application activating...");
     log(`Schema ID: ${AppConfig.schemaId}`);
 
     const display = Gdk.Display.get_default();
@@ -55,6 +53,7 @@ app.connect('activate', () => {
         title: AppConfig.name, 
         default_width: AppConfig.defaults.window.width,
         default_height: AppConfig.defaults.window.height,
+        // Match prefs.js settings
         width_request: AppConfig.defaults.window.minWidth,
         height_request: AppConfig.defaults.window.minHeight,
         icon_name: AppConfig.defaults.id 

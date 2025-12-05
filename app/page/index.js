@@ -1,6 +1,7 @@
 import { createHomeUI } from './home.js';
 import { createAboutUI } from './about.js';
 import { createSettingUI } from './setting.js';
+import { createCssUI } from './css.js'; // Import CSS page
 import Adw from 'gi://Adw';
 
 export function getPages() {
@@ -26,8 +27,7 @@ export function getPages() {
             ]
         },
         {
-            title: "Hardware",
-            description: "Device configuration",
+            title: "Appearance",
             items: [
                 {
                     id: 'settings',
@@ -51,6 +51,15 @@ export function getPages() {
                             }
                         }
                     ]
+                },
+                // NEW: CSS Theme Page
+                {
+                    id: 'themes',
+                    title: 'Themes & Styles',
+                    icon: 'preferences-desktop-theme-symbolic',
+                    description: 'Manage bundled and custom CSS',
+                    keywords: ['css', 'style', 'theme', 'color', 'custom'],
+                    ui: createCssUI
                 }
             ]
         },

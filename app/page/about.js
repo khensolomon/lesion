@@ -1,12 +1,10 @@
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import GLib from 'gi://GLib';
-import { AppConfig } from '../config.js'; // Import Unified Config
+import { AppConfig } from '../config.js'; 
 
 export function createAboutUI(navigator, goToPage) {
     const page = new Adw.PreferencesPage();
-
-    // Use the unified metadata
     const metadata = AppConfig.metadata;
 
     // --- 1. HEADER SECTION ---
@@ -18,55 +16,22 @@ export function createAboutUI(navigator, goToPage) {
         halign: Gtk.Align.CENTER
     });
 
-    // A. LOGO 
-    // Logic remains similar but relies on explicit paths or theme
-    // For standalone, we might still check the file, but for extensions,
-    // icons are usually handled by the theme installed by the extension.
-    const currentDir = GLib.get_current_dir();
-    const iconPath = GLib.build_filenamev([currentDir, 'app', 'icon', 'icon.svg']);
+    // Logo Logic
+    const rootDir = AppConfig.path || GLib.get_current_dir();
+    const iconPath = GLib.build_filenamev([rootDir, 'app', 'icon', 'icon.svg']);
     
     let logoWidget;
-    // Simple check: if standalone & file exists, use file. Else use themed icon.
-    if (!AppConfig.isExtension && GLib.file_test(iconPath, GLib.FileTest.EXISTS)) {
+    if (GLib.file_test(iconPath, GLib.FileTest.EXISTS)) {
         logoWidget = new Gtk.Image({ file: iconPath, pixel_size: 96, margin_bottom: 12 });
     } else {
-        // In extension mode, or fallback, assume icon is installed in theme
-        // or use a generic one
-        logoWidget = new Gtk.Image({ 
-            icon_name: 'application-x-executable', // or AppConfig.appId
-            pixel_size: 96,
-            margin_bottom: 12
-        });
+        logoWidget = new Gtk.Image({ icon_name: 'application-x-executable', pixel_size: 96, margin_bottom: 12 });
     }
 
-    // B. METADATA
-    const appName = new Gtk.Label({
-        label: metadata.name,
-        css_classes: ['title-1'], 
-        margin_bottom: 0,
-        wrap: true,
-        justify: Gtk.Justification.CENTER
-    });
-
-    const version = new Gtk.Label({
-        label: `v${metadata.version}`,
-        css_classes: ['title-4', 'dim-label'], 
-        margin_bottom: 12 
-    });
-
-    const developer = new Gtk.Label({
-        label: metadata["developer-name"] || 'Unknown Developer',
-        css_classes: ['heading'], 
-    });
-
-    const description = new Gtk.Label({
-        label: metadata.description || '',
-        justify: Gtk.Justification.CENTER,
-        wrap: true,
-        css_classes: ['body'],
-        margin_top: 6,
-        max_width_chars: 40
-    });
+    // Metadata Labels
+    const appName = new Gtk.Label({ label: metadata.name, css_classes: ['title-1'], margin_bottom: 0, wrap: true, justify: Gtk.Justification.CENTER });
+    const version = new Gtk.Label({ label: `v${metadata.version}`, css_classes: ['title-4', 'dim-label'], margin_bottom: 12 });
+    const developer = new Gtk.Label({ label: metadata["developer-name"] || 'Unknown Developer', css_classes: ['heading'] });
+    const description = new Gtk.Label({ label: metadata.description || '', justify: Gtk.Justification.CENTER, wrap: true, css_classes: ['body'], margin_top: 6, max_width_chars: 40 });
 
     headerBox.append(logoWidget);
     headerBox.append(appName);
@@ -79,6 +44,7 @@ export function createAboutUI(navigator, goToPage) {
     page.add(headerGroup);
 
     // --- 2. DOCUMENTATION SECTION ---
+    // Check if links exist in the metadata loaded by AppConfig
     if (metadata.links && Object.keys(metadata.links).length > 0) {
         const docGroup = new Adw.PreferencesGroup({
             title: 'Documentation',
@@ -87,31 +53,15 @@ export function createAboutUI(navigator, goToPage) {
 
         const createLinkRow = (title, uri) => {
             const row = new Adw.ActionRow({ title: title, activatable: true });
-            
-            row.add_suffix(new Gtk.Image({ 
-                icon_name: 'external-link-symbolic',
-                css_classes: ['dim-label']
-            }));
-
+            row.add_suffix(new Gtk.Image({ icon_name: 'external-link-symbolic', css_classes: ['dim-label'] }));
             row.connect('activated', () => {
-                // MODERN API: Gtk.UriLauncher (GTK 4.10+)
-                // Replaces the deprecated Gtk.show_uri
                 try {
                     const launcher = new Gtk.UriLauncher({ uri: uri });
-                    // launch() takes (parent, cancellable, callback)
-                    // We can pass null for parent/cancellable in simple cases
-                    launcher.launch(null, null, (obj, res) => {
-                        try {
-                            launcher.launch_finish(res);
-                        } catch (e) {
-                            console.warn(`Failed to launch URI ${uri}: ${e.message}`);
-                        }
-                    });
+                    launcher.launch(null, null, null);
                 } catch (e) {
                     console.error("Gtk.UriLauncher failed:", e);
                 }
             });
-
             return row;
         };
 
@@ -119,17 +69,14 @@ export function createAboutUI(navigator, goToPage) {
             let targetUrl = rawUrl;
             const isFullUrl = rawUrl.startsWith('http://') || rawUrl.startsWith('https://');
 
+            // Resolve relative URLs using metadata.url
             if (!isFullUrl && metadata.url) {
                 const baseUrl = metadata.url.endsWith('/') ? metadata.url.slice(0, -1) : metadata.url;
                 const path = rawUrl.startsWith('/') ? rawUrl.slice(1) : rawUrl;
                 targetUrl = `${baseUrl}/${path}`;
             }
 
-            const title = key
-                .split(/[-_]/)
-                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
-
+            const title = key.split(/[-_]/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
             docGroup.add(createLinkRow(title, targetUrl));
         });
 

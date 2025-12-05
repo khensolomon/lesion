@@ -1,20 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<schemalist>
+<schemalist gettext-domain="dev-lethil-lesion">
   <schema id="dev.lethil.lesion" path="/dev/lethil/lesion/">
-
+    <!-- Enabled Bundled Styles -->
     <key name="enabled-styles" type="as">
-      <summary>Enabled CSS file names</summary>
-      <description>List of CSS files in style/ that are currently applied to GNOME Shell.</description>
       <default>[]</default>
+      <summary>Enabled CSS file names</summary>
+      <description>List of CSS files in style/bundled/ that are currently applied.</description>
     </key>
-
-    <!-- NEW KEY FOR CUSTOM USER FILES -->
+    
+    <!-- Custom User Styles -->
     <key name="custom-styles" type="a(sb)">
       <default>[]</default>
       <summary>User-added custom CSS files</summary>
       <description>An array of tuples containing the file URI and its enabled state.</description>
     </key>
 
+    <!-- Navigation -->
+    <key name="open-page" type="s">
+      <default>""</default>
+      <summary>Page to open</summary>
+    </key>
   </schema>
 </schemalist>
-
