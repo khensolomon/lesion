@@ -5,13 +5,15 @@ import GLib from 'gi://GLib';
 import { AppConfig } from '../config.js';
 import { log, logError } from '../util/logger.js';
 
+// Global reference to prevent Garbage Collection while dialog is open
+let _activeFileChooser = null;
+
 /**
  * Creates the CSS Configuration Page.
  */
 export function createCssUI(navigator) {
     const page = new Adw.PreferencesPage();
 
-    // Verify we have a valid schema ID before trying to load settings
     if (!AppConfig.schemaId) {
         const errGroup = new Adw.PreferencesGroup();
         errGroup.add(new Adw.ActionRow({ title: 'Error', subtitle: 'Schema ID not found in configuration.' }));
@@ -57,9 +59,6 @@ function _listBundledFiles() {
     return files;
 }
 
-/**
- * Helper: Reads the file and extracts the text inside the first comment block
- */
 function _extractCssDescription(file) {
     try {
         const [success, contents] = file.load_contents(null);
@@ -68,7 +67,6 @@ function _extractCssDescription(file) {
         const decoder = new TextDecoder('utf-8');
         const text = decoder.decode(contents);
 
-        // Regex to match the first block comment
         const match = text.match(/^\s*\/\*+([\s\S]*?)\*+\//);
         
         if (match && match[1]) {
@@ -89,7 +87,6 @@ function _addBundledStylesGroup(page, settings) {
     page.add(group);
 
     const cssFiles = _listBundledFiles();
-    // Default to empty array if key doesn't exist yet
     const enabled = settings.get_strv('enabled-styles') || [];
     const cssDir = GLib.build_filenamev([AppConfig.path, 'style', 'bundled']);
 
@@ -143,7 +140,6 @@ function _addCustomStylesGroup(page, settings) {
     });
     page.add(group);
 
-    // ListBox for custom files
     const listbox = new Gtk.ListBox({
         selection_mode: Gtk.SelectionMode.NONE,
         css_classes: ['boxed-list'],
@@ -157,10 +153,8 @@ function _addCustomStylesGroup(page, settings) {
     });
     group.add(addButton);
 
-    // Initial population
     _populateCustomStyles(listbox, settings);
 
-    // Listen for external changes
     settings.connect('changed::custom-styles', () => _populateCustomStyles(listbox, settings));
 
     addButton.connect('clicked', () => {
@@ -210,9 +204,12 @@ function _createCustomStyleRow(uri, enabled, settings) {
         css_classes: ['flat']
     });
     openButton.connect('clicked', () => {
-        // Modern GTK4 way to launch file
-        const launcher = new Gtk.UriLauncher({ uri: uri });
-        launcher.launch(null, null, null);
+        try {
+            const launcher = new Gtk.UriLauncher({ uri: uri });
+            launcher.launch(null, null, null);
+        } catch(e) {
+            logError("Failed to launch URI", e);
+        }
     });
     row.add_suffix(openButton);
 
@@ -239,7 +236,17 @@ function _createCustomStyleRow(uri, enabled, settings) {
 }
 
 function _onAddClicked(parentWindow, settings) {
-    // Use GtkFileChooserNative (Best practice for modern GTK/Portals)
+    // FIX: GC Issue prevents dialog from staying open
+    // If a dialog is already active, focus it and do nothing
+    if (_activeFileChooser) {
+        try {
+            _activeFileChooser.present();
+        } catch(e) {
+            _activeFileChooser = null; // Clean up stale reference
+        }
+        return;
+    }
+
     const fileChooser = new Gtk.FileChooserNative({
         title: 'Select CSS File',
         action: Gtk.FileChooserAction.OPEN,
@@ -252,20 +259,24 @@ function _onAddClicked(parentWindow, settings) {
     filter.add_pattern('*.css');
     fileChooser.add_filter(filter);
 
+    // FIX: Assign to module-level variable to hold reference
+    _activeFileChooser = fileChooser;
+
     fileChooser.connect('response', (dialog, response) => {
         if (response === Gtk.ResponseType.ACCEPT) {
             const file = dialog.get_file();
             const uri = file.get_uri();
             
             const currentStyles = settings.get_value('custom-styles').deep_unpack();
-            // Check for duplicates
             if (!currentStyles.some(([u]) => u === uri)) {
-                // Add new style (enabled by default)
                 currentStyles.push([uri, true]);
                 settings.set_value('custom-styles', new GLib.Variant('a(sb)', currentStyles));
             }
         }
         dialog.destroy();
+        
+        // FIX: Clear reference after destruction
+        _activeFileChooser = null;
     });
 
     fileChooser.show();

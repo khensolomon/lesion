@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="dev-lethil-lesion">
+
+  <!-- Enum for showapps-position -->
+  <enum id="dev.lethil.lesion.ShowAppsPosition">
+    <value nick="replace" value="0"/>
+    <value nick="after"   value="1"/> <!-- previously "next-to" -->
+    <value nick="before"  value="2"/>    
+  </enum>
+
+  <enum id="dev.lethil.lesion.ShowAppsAction">
+    <value nick="overview" value="0"/>
+    <value nick="apps"     value="1"/>
+  </enum>
+
   <schema id="dev.lethil.lesion" path="/dev/lethil/lesion/">
     <!-- Enabled Bundled Styles -->
     <key name="enabled-styles" type="as">
@@ -20,5 +33,45 @@
       <default>""</default>
       <summary>Page to open</summary>
     </key>
+
+    <!-- Indicator Options -->
+    <key name="indicator-enabled" type="b">
+      <default>true</default>
+      <summary>Show the extension indicator in the panel</summary>
+    </key>
+    <key name="indicator-custom-icon" type="s">
+      <default>''</default>
+      <summary>Custom icon path for the main indicator</summary>
+    </key>
+
+    <!-- Show Apps -->
+    <key name="showapps-action" enum="dev.lethil.lesion.ShowAppsAction">
+      <default>'apps'</default>
+      <summary>What the button does</summary>
+    </key>
+
+    <key name="showapps-enabled" type="b">
+      <default>false</default>
+      <summary>Enable the Show Applications button in top panel</summary>
+      <description>Completely disable this feature if turned off</description>
+    </key>
+
+    <key name="showapps-position" enum="dev.lethil.lesion.ShowAppsPosition">
+      <default>'replace'</default>
+      <summary>Where to place the Show Apps button</summary>
+      <description>replace = hide Activities text, after = insert button after it, before = insert button before it</description>
+    </key>
+
+    <key name="showapps-custom-icon" type="s">
+      <default>''</default>
+      <summary>Custom icon file path</summary>
+      <description>Full path to SVG/PNG/JPG. Empty string = use default view-app-grid-symbolic</description>
+    </key>
+
+    <!-- You can safely add more features later, e.g.:
+    <key name="clock-seconds" type="b"><default>false</default></key>
+    <key name="weather-enabled" type="b"><default>false</default></key>
+    -->
+
   </schema>
 </schemalist>
