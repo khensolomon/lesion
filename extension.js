@@ -1,97 +1,60 @@
-import GLib from 'gi://GLib';
-import Gio from 'gi://Gio';
-
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import { log, logError } from './app/util/logger.js';
 import { AppConfig } from './app/config.js';
-
-// Modular Components
-import { Indicator } from './app/panel/indicator.js';
-import { WallpaperManager } from './app/ext/wallpaper.js';
-import { StyleManager } from './app/ext/styles.js';
-import { ShowAppsButton } from './app/panel/showapps.js';
+// Updated import path to components
+import { getComponents } from './app/components/index.js';
 
 export default class LesionExtension extends Extension {
-    // Registry for active components (Managers, UI elements, etc.)
-    _components = [];
+    _instances = [];
 
     enable() {
-        // 1. Initialize Configuration
         AppConfig.init(this.metadata, this.path, true);
-        log("Enabling extension...");
+        log("System started.");
 
-        // 2. Register Components
-        // Order matters if components depend on each other.
-        this._components = [
-            new WallpaperManager(this),
-            new StyleManager(this),
-            new Indicator(this),
-            new ShowAppsButton(this)
-        ];
-
-        // 3. Enable All
-        this._components.forEach(component => {
+        // Instantiate and Enable all components from the registry
+        this._instances = getComponents().map(ComponentClass => {
             try {
-                if (typeof component.enable === 'function') {
-                    component.enable();
+                const instance = new ComponentClass(this);
+                if (typeof instance.enable === 'function') {
+                    instance.enable();
                 }
+                return instance;
             } catch (e) {
-                logError(`Failed to enable component ${component.constructor.name}`, e);
+                logError(`Failed to load component ${ComponentClass.name}`, e);
+                return null;
             }
-        });
+        }).filter(i => i !== null);
     }
 
     disable() {
-        log("Disabling extension...");
+        log("System stopping.");
 
-        // Disable all components in reverse order (LIFO) usually safer
-        // but for these independent components, order is less critical.
-        // We iterate copy to allow modification if needed, though simple loop is fine.
-        [...this._components].reverse().forEach(component => {
+        // Disable in reverse order (LIFO) for safe dependency teardown
+        [...this._instances].reverse().forEach(instance => {
             try {
-                if (typeof component.disable === 'function') {
-                    component.disable();
+                if (typeof instance.disable === 'function') {
+                    instance.disable();
                 }
             } catch (e) {
-                logError(`Failed to disable component ${component.constructor.name}`, e);
+                logError("Error disabling component", e);
             }
         });
 
-        // Clear registry
-        this._components = [];
+        this._instances = [];
     }
 
-    openPreferences(page = "") {
+    openPreferences(page) {
+        super.openPreferences();
+        
         if (page) {
             try {
-                const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
-                settings.set_string("open-page", page);
-            } catch (e) {
-                logError("Failed to set preferences open-page", e);
-            }
-        }
-
-        const display = global.display;
-        const allWindows = display.list_all_windows();
-        const appName = AppConfig.name;
-
-        const existingWindow = allWindows.find((w) => {
-            if (!w || !w.get_title) return false;
-            const title = w.get_title() || "";
-            return title === appName || title.includes(appName);
-        });
-
-        if (existingWindow) {
-            existingWindow.activate(global.get_current_time());
-        } else {
-            try {
-                GLib.spawn_command_line_async(`gnome-extensions prefs ${AppConfig.uuid}`);
-            } catch (e) {
-                logError("Failed to open preferences window", e);
-            }
+                // We access the schema ID via AppConfig, but need to be careful if Config isn't initialized yet 
+                // (though in openPreferences it usually is).
+                // Safest to use metadata fallback if needed.
+                const schema = AppConfig.schemaId || this.metadata['settings-schema'];
+                const s = this.getSettings(schema);
+                s.set_string("open-page", page);
+            } catch(e) {}
         }
     }
-
-    toggleFeature() { log("Feature toggled (Stub)"); }
-    openLogs() { log("Opening logs (Stub)"); }
 }

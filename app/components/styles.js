@@ -2,60 +2,31 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import St from 'gi://St';
 import { log, logError } from '../util/logger.js';
-import { AppConfig } from '../config.js';
+import { ExtensionComponent } from './base.js';
 
-export class StyleManager {
-    /**
-     * @param {Extension} ext - The main extension instance.
-     */
-    constructor(ext) {
-        this._extension = ext;
+export class StyleManager extends ExtensionComponent {
+    
+    onEnable() {
         this._stylesheetFiles = [];
-        this._settings = null;
-        this._signals = [];
-    }
+        
+        // Apply immediately
+        this._applyStyles();
 
-    /**
-     * Initializes settings and applies styles.
-     */
-    enable() {
-        // Initialize settings logic locally since it pertains to styles
-        try {
-            try {
-                this._settings = this._extension.getSettings(AppConfig.schemaId);
-            } catch (e) {
-                log(`Explicit schema '${AppConfig.schemaId}' not found. Trying default...`);
-                this._settings = this._extension.getSettings(); 
-            }
-            
-            // Initial application
+        // Watch settings using the base class 'observe' helper
+        this.observe('changed::enabled-styles', () => {
+            log("Setting changed: enabled-styles");
             this._applyStyles();
-
-            // Connect signals
-            const sig1 = this._settings.connect('changed::enabled-styles', () => {
-                log("Setting changed: enabled-styles");
-                this._applyStyles();
-            });
-            
-            const sig2 = this._settings.connect('changed::custom-styles', () => {
-                log("Setting changed: custom-styles");
-                this._applyStyles();
-            });
-
-            this._signals.push(sig1, sig2);
-        } catch (e) {
-            logError("Failed to initialize StyleManager settings", e);
-        }
+        });
+        
+        this.observe('changed::custom-styles', () => {
+            log("Setting changed: custom-styles");
+            this._applyStyles();
+        });
     }
 
-    disable() {
-        if (this._settings) {
-            this._signals.forEach(id => this._settings.disconnect(id));
-        }
-        this._signals = [];
-        this._settings = null;
-
+    onDisable() {
         this._removeStyles();
+        this._stylesheetFiles = [];
     }
 
     _applyStyles() {
@@ -64,8 +35,10 @@ export class StyleManager {
         const themeContext = St.ThemeContext.get_for_stage(global.stage);
         const theme = themeContext.get_theme();
         const cssDir = GLib.build_filenamev([this._extension.path, 'style', 'bundled']);
+        const settings = this.getSettings();
 
-        const enabledBundled = this._settings.get_strv('enabled-styles') || [];
+        // A. Load Bundled Styles
+        const enabledBundled = settings.get_strv('enabled-styles') || [];
         for (const cssFile of enabledBundled) {
             try {
                 const path = GLib.build_filenamev([cssDir, cssFile]);
@@ -80,8 +53,9 @@ export class StyleManager {
             }
         }
 
+        // B. Load Custom User Styles
         try {
-            const customStyles = this._settings.get_value('custom-styles').deep_unpack();
+            const customStyles = settings.get_value('custom-styles').deep_unpack();
             for (const [uri, enabled] of customStyles) {
                 if (enabled) {
                     try {

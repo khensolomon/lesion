@@ -1,20 +1,20 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { log, logError } from '../util/logger.js';
+import { ExtensionComponent } from './base.js';
 
-export class WallpaperManager {
-    /**
-     * @param {Extension} ext - The main extension instance.
-     */
-    constructor(ext) {
-        this._extension = ext;
+export class WallpaperManager extends ExtensionComponent {
+    
+    onEnable() {
         this.backupFile = 'wallpaper-backup.json';
+        this._backupWallpaper();
     }
 
-    /**
-     * Backs up the current GNOME background settings if no backup exists.
-     */
-    enable() {
+    onDisable() {
+        this._restoreWallpaper();
+    }
+
+    _backupWallpaper() {
         try {
             const backupPath = GLib.build_filenamev([this._extension.path, this.backupFile]);
             
@@ -40,10 +40,7 @@ export class WallpaperManager {
         }
     }
 
-    /**
-     * Restores the background settings from the backup file.
-     */
-    disable() {
+    _restoreWallpaper() {
         try {
             const backupPath = GLib.build_filenamev([this._extension.path, this.backupFile]);
             const file = Gio.File.new_for_path(backupPath);

@@ -3,6 +3,7 @@
 Features (General, Appearance, System)
 
 - General (Utility)
+  - [x] Dashboard
   - [x] Show Apps button
   - [x] About
   - [ ] Toggle switch (On/Off) Save window size and position
@@ -19,4 +20,5 @@ Features (General, Appearance, System)
   - [ ] Quick notes
 - System
   - [x] demo
+  - [ ] Export & Import Settings
   
