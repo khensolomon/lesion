@@ -4,6 +4,9 @@ import { createSettingUI } from "./setting.js";
 import { createCssUI } from "./css.js";
 import { createWallpaperUI } from "./wallpaper.js";
 import { createShowAppsUI } from './showapps.js';
+import { createCornersUI } from './corners.js';
+import { createGeometryUI } from './geometry.js';
+import { createClockUI } from './clock.js';
 import Adw from "gi://Adw";
 
 export function getPages() {
@@ -21,7 +24,7 @@ export function getPages() {
         },
         {
           id: "showapps",
-          title: "Show apps Button",
+          title: "Show Apps button",
           icon: "start-here-symbolic",
           description: "Show or hide the Show Apps button on the panel",
           ui: createShowAppsUI,
@@ -81,6 +84,30 @@ export function getPages() {
           description: "Manage bundled and custom CSS",
           keywords: ["css", "style", "theme", "color", "custom"],
           ui: createCssUI,
+        },        
+        {
+          id: "window-corners",
+          title: "Corner",
+          icon: "preferences-desktop-theme-symbolic",
+          description: "Window corner actions and hotspots",
+          keywords: ["corners", "hotspots", "actions", "edges", "round"],
+          ui: createCornersUI,
+        },
+        {
+          id: "window-geometry",
+          title: "Geometry",
+          icon: "preferences-desktop-theme-symbolic",
+          description: "geometry saving and restoring",
+          keywords: ['width', 'height', 'position', 'size', 'remember'],
+          ui: createGeometryUI,
+        },
+        {
+          id: "panel-clock",
+          title: "Data & Time",
+          icon: "preferences-system-time-symbolic",
+          description: "Clock position on the panel",
+          keywords: ["clock", "time", "date", "panel", "position"],
+          ui: createClockUI,
         },
       ],
     },

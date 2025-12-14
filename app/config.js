@@ -5,7 +5,7 @@
 export const AppConfig = {
     // 1. Static Configuration
     defaults: {
-        id: 'com.lethil.GnomeSplitViewDemo',
+        id: 'dev.lethil.lesion',
         title: 'Gnome Split View Demo',
         window: {
             width: 800,

@@ -1,6 +1,9 @@
 // Logic Modules (Moved from app/ext to app/components)
 import { WallpaperManager } from './wallpaper.js';
 import { StyleManager } from './styles.js';
+import { CornersManager } from './corners.js';
+import { GeometryManager } from './geometry.js';
+import { ClockManager } from './clock.js';
 
 // Panel Widgets
 import { Indicator } from '../panel/indicator.js';
@@ -14,6 +17,9 @@ export function getComponents() {
     return [
         WallpaperManager,
         StyleManager,
+        CornersManager,
+        GeometryManager,
+        ClockManager,
         Indicator,
         ShowAppsButton
     ];

@@ -2,10 +2,12 @@ import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import Gdk from 'gi://Gdk'; // Required for Clipboard
+import Gdk from 'gi://Gdk'; 
 import { AppConfig } from '../config.js';
+import { SettingsManager } from '../util/io.js'; // Import the new IO Helper
 
 let _activeIconChooser = null;
+let _activeDataDialog = null; // Prevent GC for export/import dialogs
 
 export function createHomeUI(navigator, goToPage) {
     const page = new Adw.PreferencesPage();
@@ -15,7 +17,6 @@ export function createHomeUI(navigator, goToPage) {
     const statusGroup = new Adw.PreferencesGroup();
     page.add(statusGroup);
 
-    // Detect Session Type (Wayland/X11)
     const sessionType = GLib.getenv('XDG_SESSION_TYPE') || 'Unknown';
     
     const heroRow = new Adw.ActionRow({
@@ -59,7 +60,6 @@ export function createHomeUI(navigator, goToPage) {
     settings.bind('indicator-enabled', indEnableRow, 'active', Gio.SettingsBindFlags.DEFAULT);
     indicatorGroup.add(indEnableRow);
 
-    // Pass the enable row to bind sensitivity (dim when disabled)
     const iconRow = _createIconSelector(settings);
     settings.bind('indicator-enabled', iconRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
     indicatorGroup.add(iconRow);
@@ -72,32 +72,142 @@ export function createHomeUI(navigator, goToPage) {
     });
     page.add(navGroup);
 
-    navGroup.add(_createNavRow(
-        'Wallpaper Engine', 
-        'Manage dual-mode backgrounds', 
-        'preferences-desktop-wallpaper-symbolic', 
-        'wallpaper',
-        goToPage
-    ));
+    navGroup.add(_createNavRow('Wallpaper Engine', 'Manage dual-mode backgrounds', 'preferences-desktop-wallpaper-symbolic', 'wallpaper', goToPage));
+    navGroup.add(_createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-theme-symbolic', 'themes', goToPage));
+    navGroup.add(_createNavRow('Show Apps Button', 'Customize the app grid button', 'view-app-grid-symbolic', 'showapps', goToPage));
 
-    navGroup.add(_createNavRow(
-        'Window Styles', 
-        'Inject custom CSS themes', 
-        'preferences-desktop-theme-symbolic', 
-        'themes',
-        goToPage
-    ));
 
-    navGroup.add(_createNavRow(
-        'Show Apps Button', 
-        'Customize the app grid button', 
-        'view-app-grid-symbolic', 
-        'showapps',
-        goToPage
-    ));
+    // --- 4. DATA MANAGEMENT (New) ---
+    const dataGroup = new Adw.PreferencesGroup({
+        title: 'Data Management',
+        description: 'Backup or restore your configuration'
+    });
+    page.add(dataGroup);
+
+    // Export Row
+    const exportRow = new Adw.ActionRow({
+        title: 'Export Configuration',
+        subtitle: 'Save settings to a JSON file'
+    });
+    const exportBtn = new Gtk.Button({
+        icon_name: 'document-save-symbolic',
+        valign: Gtk.Align.CENTER,
+        css_classes: ['flat']
+    });
+    exportBtn.connect('clicked', () => _handleExport(exportBtn));
+    exportRow.add_suffix(exportBtn);
+    dataGroup.add(exportRow);
+
+    // Import Row
+    const importRow = new Adw.ActionRow({
+        title: 'Import Configuration',
+        subtitle: 'Restore settings from a JSON file'
+    });
+    const importBtn = new Gtk.Button({
+        icon_name: 'document-open-symbolic',
+        valign: Gtk.Align.CENTER,
+        css_classes: ['flat']
+    });
+    importBtn.connect('clicked', () => _handleImport(importBtn, page));
+    importRow.add_suffix(importBtn);
+    dataGroup.add(importRow);
 
     return page;
 }
+
+// --- IO HANDLERS ---
+
+function _handleExport(button) {
+    if (_activeDataDialog) return;
+
+    const dialog = new Gtk.FileChooserNative({
+        title: 'Export Settings',
+        action: Gtk.FileChooserAction.SAVE,
+        transient_for: button.get_root(),
+        modal: true
+    });
+
+    dialog.set_current_name(`lesion-config-${new Date().toISOString().slice(0,10)}.json`);
+
+    const filter = new Gtk.FileFilter();
+    filter.set_name("JSON Config");
+    filter.add_pattern("*.json");
+    dialog.add_filter(filter);
+
+    _activeDataDialog = dialog;
+
+    dialog.connect('response', (d, response) => {
+        if (response === Gtk.ResponseType.ACCEPT) {
+            const file = d.get_file();
+            const json = SettingsManager.exportSettings();
+            if (json) {
+                file.replace_contents_async(json, null, false, Gio.FileCreateFlags.NONE, null, null);
+            }
+        }
+        d.destroy();
+        _activeDataDialog = null;
+    });
+
+    dialog.show();
+}
+
+function _handleImport(button, pageWidget) {
+    if (_activeDataDialog) return;
+
+    const dialog = new Gtk.FileChooserNative({
+        title: 'Import Settings',
+        action: Gtk.FileChooserAction.OPEN,
+        transient_for: button.get_root(),
+        modal: true
+    });
+
+    const filter = new Gtk.FileFilter();
+    filter.set_name("JSON Config");
+    filter.add_pattern("*.json");
+    dialog.add_filter(filter);
+
+    _activeDataDialog = dialog;
+
+    dialog.connect('response', (d, response) => {
+        if (response === Gtk.ResponseType.ACCEPT) {
+            const file = d.get_file();
+            const [success, content] = file.load_contents(null);
+            
+            if (success) {
+                const decoder = new TextDecoder('utf-8');
+                const jsonStr = decoder.decode(content);
+                const result = SettingsManager.importSettings(jsonStr);
+
+                // Show feedback
+                const toast = new Adw.Toast({ 
+                    title: result.message,
+                    timeout: 3 // seconds
+                });
+                // We need to find the overlay to show toast.
+                // In a PreferencesWindow, we can usually find it or just assume standard structure.
+                // Or simpler: alert dialog if error, toast if success.
+                // Since finding the toast overlay is complex here without passing context, 
+                // we'll just log it or use a simple MessageDialog for errors.
+                
+                if (!result.success) {
+                    const errDialog = new Adw.MessageDialog({
+                        heading: "Import Failed",
+                        body: result.message,
+                        transient_for: button.get_root()
+                    });
+                    errDialog.add_response("ok", "OK");
+                    errDialog.present();
+                }
+            }
+        }
+        d.destroy();
+        _activeDataDialog = null;
+    });
+
+    dialog.show();
+}
+
+// --- (Existing Helpers: _createNavRow, _createIconSelector, _updateSubtitle remain same) ---
 
 function _createNavRow(title, desc, icon, targetId, goToPage) {
     const row = new Adw.ActionRow({
@@ -157,7 +267,6 @@ function _createIconSelector(settings) {
     const box = new Gtk.Box({ spacing: 6, valign: Gtk.Align.CENTER });
     row.add_suffix(box);
 
-    // FIX: Using 'view-refresh-symbolic' for a cleaner "Reset/Restore" look
     const resetBtn = new Gtk.Button({
         icon_name: 'view-refresh-symbolic', 
         tooltip_text: 'Reset to Default',

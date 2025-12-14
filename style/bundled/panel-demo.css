@@ -1,0 +1,42 @@
+/*
+  Panel: top bar/ Unity Panel test
+  Use this file to confirm your extension is applying CSS correctly.
+  The styles here are intentionally garish and obvious for testing purposes.
+*/
+
+/* 1. Make the Top Bar Bright Red */
+/* This is the easiest and most obvious element to change. */
+#panel {
+  background-color: red !important;
+  border: 2px solid lime !important;
+}
+
+/* 2. Change the Panel Font and Clock */
+/* This targets all text in the top panel. */
+#panel .panel-button {
+  font-size: 14pt !important;
+  font-weight: bold !important;
+  color: yellow !important;
+}
+
+/* 3. Style the Activities Button Specifically */
+#panel .panel-activity-button {
+  background-color: magenta !important;
+  border-radius: 20px !important;
+}
+
+/* 4. Put a Thick Border on Window Header Bars */
+/* This targets the title bar of most modern application windows. */
+.header-bar {
+  border-bottom: 5px solid cyan !important;
+  background-image: none !important; /* Remove gradients to see color */
+  background-color: #333 !important;
+}
+
+/* 5. Style Notifications */
+/* This will make any notification popup very obvious. */
+.notification-banner {
+  border: 4px solid orange !important;
+  border-radius: 25px !important;
+  background-color: black !important;
+}

@@ -4,39 +4,36 @@
   The styles here are intentionally garish and obvious for testing purposes.
 */
 
-/* 1. Make the Top Bar Bright Red */
-/* This is the easiest and most obvious element to change. */
-#panel {
-  background-color: red !important;
-  border: 2px solid lime !important;
-}
+/* #panel {
+  background-color: rgba(218, 218, 218, 0.116);
+} */
 
-/* 2. Change the Panel Font and Clock */
-/* This targets all text in the top panel. */
 #panel .panel-button {
-  font-size: 14pt !important;
-  font-weight: bold !important;
-  color: yellow !important;
+    border-radius: 8px;
+    /* background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important; */
+    padding: 0px !important;
 }
 
-/* 3. Style the Activities Button Specifically */
-#panel .panel-activity-button {
-  background-color: magenta !important;
-  border-radius: 20px !important;
+/* #panel .clock-display:hover{
+    background-color: rgba(92, 92, 92, 0.33);
 }
 
-/* 4. Put a Thick Border on Window Header Bars */
-/* This targets the title bar of most modern application windows. */
-.header-bar {
-  border-bottom: 5px solid cyan !important;
-  background-image: none !important; /* Remove gradients to see color */
-  background-color: #333 !important;
+#panel .clock-display:active{
+    background-color: rgba(41, 41, 41, 0.60);
+} */
+
+
+#panel .panel-button:hover{
+    
+    /* background-color: rgba(128, 3, 3, 0.952); */
+    /* background: rgba(0, 0, 0, 0.0);  */
+    /* color: rgba(124, 124, 124, 0.50);  */
 }
 
-/* 5. Style Notifications */
-/* This will make any notification popup very obvious. */
-.notification-banner {
-  border: 4px solid orange !important;
-  border-radius: 25px !important;
-  background-color: black !important;
+#panel .panel-button:active{
+    /* background-color: rgba(41, 41, 41, 0.60); */
+    /* background:rgba(0, 0, 0, 0.0);  */
+     /* color: rgba(42, 87, 79, 0.685);  */
 }

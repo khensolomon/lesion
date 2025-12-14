@@ -123,7 +123,7 @@ export class Indicator {
     if (!this.button) return;
     const menu = this.button.menu;
 
-    const prefsItem = new PopupMenu.PopupMenuItem("Show Preferences");
+    const prefsItem = new PopupMenu.PopupMenuItem("Preferences");
     prefsItem.connect("activate", () => {
       this.extension.openPreferences();
     });
