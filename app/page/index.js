@@ -7,6 +7,7 @@ import { createShowAppsUI } from './showapps.js';
 import { createCornersUI } from './corners.js';
 import { createGeometryUI } from './geometry.js';
 import { createClockUI } from './clock.js';
+import { createDockUI } from './dock.js';
 import Adw from "gi://Adw";
 
 export function getPages() {
@@ -114,6 +115,12 @@ export function getPages() {
     {
       title: "System",
       items: [
+        {
+            id: 'dock',
+            title: 'Dock',
+            icon: 'view-app-grid-symbolic',
+            ui: createDockUI
+        },
         {
           id: "system-tools",
           title: "System Tools",

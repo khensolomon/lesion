@@ -4,6 +4,7 @@ import { StyleManager } from './styles.js';
 import { CornersManager } from './corners.js';
 import { GeometryManager } from './geometry.js';
 import { ClockManager } from './clock.js';
+import { DockManager } from './dock.js';
 
 // Panel Widgets
 import { Indicator } from '../panel/indicator.js';
@@ -20,6 +21,7 @@ export function getComponents() {
         CornersManager,
         GeometryManager,
         ClockManager,
+        DockManager,
         Indicator,
         ShowAppsButton
     ];

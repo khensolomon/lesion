@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="dev-lethil-lesion">
 
-  <!-- Enum for showapps-position -->
+  <!-- showapps-position's Enums -->
   <enum id="dev.lethil.lesion.ShowAppsPosition">
     <value nick="replace" value="0"/>
     <value nick="after"   value="1"/>
@@ -12,7 +12,7 @@
     <value nick="apps"     value="1"/>
   </enum>
 
-  <!-- Clock -->
+  <!-- Clock's Enums -->
   <enum id="dev.lethil.lesion.ClockTarget">
     <value nick="left"  value="0"/>
     <value nick="right" value="1"/>
@@ -24,6 +24,14 @@
   <enum id="dev.lethil.lesion.ClockFormatMode">
     <value nick="default" value="0"/>
     <value nick="custom"  value="1"/>
+  </enum>
+
+  <!-- Dock's Enums -->
+  <enum id="dev.lethil.lesion.DockPosition">
+    <value nick="bottom" value="0"/>
+    <value nick="left"   value="1"/>
+    <value nick="right"  value="2"/>
+    <value nick="top"    value="3"/>
   </enum>
 
   <schema id="dev.lethil.lesion" path="/dev/lethil/lesion/">
@@ -147,6 +155,41 @@
     <key name="clock-seconds" type="b"><default>false</default></key>
     <key name="weather-enabled" type="b"><default>false</default></key>
     -->
+    
+    <!-- Dock -->
+    <key name="dock-enabled" type="b">
+      <default>false</default>
+      <summary>Enable persistent dock</summary>
+    </key>
+    <key name="dock-position" enum="dev.lethil.lesion.DockPosition">
+      <default>'bottom'</default>
+      <summary>Screen edge position</summary>
+    </key>
+    <key name="dock-panel-mode" type="b">
+      <default>false</default>
+      <summary>Extend dock to screen edges (Panel mode)</summary>
+    </key>
+    <key name="dock-icon-size" type="i">
+      <default>48</default>
+      <summary>App icon size in pixels</summary>
+    </key>
+    <key name="dock-radius" type="i">
+      <default>16</default>
+      <summary>Corner radius</summary>
+    </key>
+    <key name="dock-opacity" type="d">
+      <default>0.8</default>
+      <summary>Background opacity (0.0 to 1.0)</summary>
+    </key>
+    <key name="dock-color" type="s">
+      <default>'#242424'</default>
+      <summary>Background color hex</summary>
+    </key>
+    <key name="dock-autohide" type="b">
+      <default>false</default>
+      <summary>Intelligent auto-hide</summary>
+    </key>
+
 
   </schema>
 </schemalist>

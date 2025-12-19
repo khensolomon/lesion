@@ -1,3 +1,4 @@
+import GLib from "gi://GLib";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import { log, logError } from "./app/util/logger.js";
 import { AppConfig } from "./app/config.js";
