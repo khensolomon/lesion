@@ -189,7 +189,51 @@
       <default>false</default>
       <summary>Intelligent auto-hide</summary>
     </key>
+    <key name="dock-padding" type="i">
+      <default>6</default>
+      <summary>Internal padding around icons</summary>
+    </key>
+    <key name="dock-margin" type="i">
+      <default>0</default>
+      <summary>External margin from screen edge</summary>
+    </key>
+    <key name="dock-show-apps" type="b">
+      <default>true</default>
+      <summary>Show or hide the applications grid button</summary>
+    </key>
+    <key name="dock-item-spacing" type="i">
+      <default>6</default>
+      <summary>Space between icons in pixels</summary>
+    </key>
+    <key name="dock-item-radius" type="i">
+      <default>12</default>
+      <summary>Border radius of individual app buttons</summary>
+    </key>
+    <key name="dock-item-color" type="s">
+      <default>'rgba(255,255,255,0.1)'</default>
+      <summary>Background color of app buttons</summary>
+    </key>
+    <key name="dock-item-padding" type="i">
+      <default>0</default>
+      <summary>Padding inside individual app buttons</summary>
+    </key>
+    <key name="dock-item-margin" type="i">
+      <default>0</default>
+      <summary>Margin around individual app buttons</summary>
+    </key>
 
+    <key name="dock-border-width" type="i">
+      <default>0</default>
+      <summary>Container border width</summary>
+    </key>
+    <key name="dock-border-color" type="s">
+      <default>'rgba(255,255,255,0.2)'</default>
+      <summary>Container border color</summary>
+    </key>
+    <key name="dock-hover-scale" type="d">
+      <default>1.0</default>
+      <summary>Scale factor on hover (1.0 to 1.5)</summary>
+    </key>    
 
   </schema>
 </schemalist>
