@@ -12,3 +12,16 @@
     /* Extra safety if needed */
     height: 0px !important;
 }
+
+.app-well-app{
+    background-color: blue !important;
+}
+.overview-icon{
+    background-color: green ;
+    /* border-radius: 0px; */
+    /* background-color: transparent;; */
+    
+}
+.show-apps{
+    background-color: yellow !important;
+}
