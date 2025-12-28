@@ -6,7 +6,7 @@ import { ExtensionComponent } from './base.js';
 export class WallpaperManager extends ExtensionComponent {
     
     onEnable() {
-        this.backupFile = 'wallpaper-backup.json';
+        this.backupFile = 'backup.wallpaper.v0.json';
         this._backupWallpaper();
     }
 
