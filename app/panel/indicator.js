@@ -1,6 +1,7 @@
 import St from "gi://St";
 import Gio from "gi://Gio";
 import GLib from "gi://GLib";
+import Clutter from "gi://Clutter";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
@@ -14,6 +15,7 @@ export class Indicator {
     this.button = null;
     this._settings = null;
     this._settingsSignals = [];
+    this._menuSignals = [];
   }
 
   enable() {
@@ -73,7 +75,37 @@ export class Indicator {
     // Set Initial Icon
     this._updateIcon();
 
-    this._buildMenu();
+    // 1. Custom Click Handling
+    this.button.connect('event', (actor, event) => {
+        if (event.type() === Clutter.EventType.BUTTON_PRESS) {
+            const button = event.get_button();
+            
+            // Left Click: Open Preferences
+            if (button === Clutter.BUTTON_PRIMARY) {
+                this.extension.openPreferences();
+                return Clutter.EVENT_STOP;
+            }
+            
+            // Right Click: Toggle Menu
+            if (button === Clutter.BUTTON_SECONDARY) {
+                this.button.menu.toggle();
+                return Clutter.EVENT_STOP;
+            }
+        }
+        return Clutter.EVENT_PROPAGATE;
+    });
+
+    // 2. Dynamic Menu Handling
+    this._menuSignals.push(
+        this.button.menu.connect('open-state-changed', (menu, open) => {
+            if (open) {
+                this._updateMenu();
+            }
+        })
+    );
+
+    // Initial build (populate static items if any, or just wait for open)
+    this._updateMenu();
 
     const role = AppConfig.uuid || "lesion-indicator";
     Main.panel.addToStatusArea(role, this.button);
@@ -81,6 +113,9 @@ export class Indicator {
 
   _destroyButton() {
       if (this.button) {
+          this._menuSignals.forEach(id => this.button.menu.disconnect(id));
+          this._menuSignals = [];
+          
           this.button.destroy();
           this.button = null;
           this._iconBin = null;
@@ -119,15 +154,48 @@ export class Indicator {
       this._iconBin.set_child(icon);
   }
 
-  _buildMenu() {
+  _updateMenu() {
     if (!this.button) return;
     const menu = this.button.menu;
+    
+    // Clear existing items to rebuild based on state
+    menu.removeAll();
 
-    const prefsItem = new PopupMenu.PopupMenuItem("Preferences");
-    prefsItem.connect("activate", () => {
-      this.extension.openPreferences();
+    // Check if extension has a state flag for prefs window
+    const isPrefsOpen = this.extension.isPreferencesOpen === true;
+
+    // If NOT open, add "Open" at the top
+    if (!isPrefsOpen) {
+        const prefsItem = new PopupMenu.PopupMenuItem("Preferences");
+        prefsItem.connect("activate", () => {
+            try {
+                this.extension.openPreferences();
+            } catch (err) {
+                logError("Failed to spawn preferences", err);
+            }
+        //   this.extension.openPreferences();
+        });
+        menu.addMenuItem(prefsItem);
+    }
+
+    // Add About
+    const aboutItem = new PopupMenu.PopupMenuItem("About");
+    aboutItem.connect("activate", () => {
+      this.extension.openPreferences("about");
     });
-    menu.addMenuItem(prefsItem);
+    menu.addMenuItem(aboutItem);
+
+    menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+    const submenu = new PopupMenu.PopupSubMenuMenuItem("Options");
+    // Example toggles
+    if (this.extension.toggleFeature) {
+        submenu.menu.addAction("Toggle Feature", () => this.extension.toggleFeature());
+    }
+    if (this.extension.openLogs) {
+        submenu.menu.addAction("Open Logs", () => this.extension.openLogs());
+    }
+    menu.addMenuItem(submenu);
 
     menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
@@ -137,17 +205,19 @@ export class Indicator {
     });
     menu.addMenuItem(quitItem);
 
-    const submenu = new PopupMenu.PopupSubMenuMenuItem("Options");
-    submenu.menu.addAction("Toggle Feature", () => this.extension.toggleFeature());
-    submenu.menu.addAction("Open Logs", () => this.extension.openLogs());
-    menu.addMenuItem(submenu);
-
-    menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-    const aboutItem = new PopupMenu.PopupMenuItem("About");
-    aboutItem.connect("activate", () => {
-      this.extension.openPreferences("about");
-    });
-    menu.addMenuItem(aboutItem);
+    // If open, add "Close" at the bottom
+    if (isPrefsOpen) {
+        const closeItem = new PopupMenu.PopupMenuItem("Close");
+        closeItem.connect("activate", () => {
+             // Assuming you implement closePreferences in your extension class
+             if (typeof this.extension.closePreferences === 'function') {
+                 this.extension.closePreferences();
+             } else {
+                 // Fallback if no close method exists: just toggle prefs
+                 this.extension.openPreferences();
+             }
+        });
+        menu.addMenuItem(closeItem);
+    }
   }
 }

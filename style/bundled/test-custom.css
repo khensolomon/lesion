@@ -25,3 +25,8 @@
 .show-apps{
     background-color: yellow !important;
 }
+
+
+.app-running-dot{
+    background-color: red;
+}

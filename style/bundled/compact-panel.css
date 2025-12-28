@@ -1,12 +1,31 @@
 /* Compact Panel */
-.panel {
-    min-height: 28px;          /* Use min-height instead of height */
-    padding: 0 6px;            /* Safe padding */
-    font-size: 11px;           /* No units issues */
-}
-
+/* General button padding (for single icons and overall compactness) */
 .panel-button {
-    margin: 0 2px;
+    -natural-hpadding: 6px;  
+    -minimum-hpadding: 0px;
+    /* background-color: red; */
+}
+.system-status-icon {
+    padding: 0 2px; 
+    margin: 0;  
 }
 
-/* Removed 'icon-size', not supported in St CSS */
+/* Target icons inside the aggregate menu (system status group) */
+.aggregate-menu .system-status-icon {
+    padding-left: 2px;   /* Reduce left padding */
+    padding-right: 2px;  /* Reduce right padding */
+    margin: 0 5px;         /* Optional: remove any margins */
+}
+
+/* Or more specifically for the container box inside aggregate */
+.aggregate-menu .popup-menu-icon {
+    margin: 0 5px;       /* Fine-tune internal icon margins */
+}
+
+/* Workspace indicator button */
+.workspace-indicator,   /* Or try .workspace-dot if it's the line/dash */
+.panel-button .workspace-dot {
+    margin: 0 5px;      /* Reduce around the dash/number */
+    spacing: 2px;        /* If it uses StBoxLayout spacing */
+}
+

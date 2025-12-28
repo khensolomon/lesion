@@ -1,37 +1,51 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="dev-lethil-lesion">
 
-  <!-- showapps-position's Enums -->
+  <!-- ShowApps's Enums -->
   <enum id="dev.lethil.lesion.ShowAppsPosition">
     <value nick="replace" value="0"/>
-    <value nick="after"   value="1"/>
-    <value nick="before"  value="2"/>    
+    <value nick="after" value="1"/>
+    <value nick="before" value="2"/>
   </enum>
   <enum id="dev.lethil.lesion.ShowAppsAction">
     <value nick="overview" value="0"/>
-    <value nick="apps"     value="1"/>
+    <value nick="apps" value="1"/>
   </enum>
 
   <!-- Clock's Enums -->
   <enum id="dev.lethil.lesion.ClockTarget">
-    <value nick="left"  value="0"/>
+    <value nick="left" value="0"/>
     <value nick="right" value="1"/>
   </enum>
   <enum id="dev.lethil.lesion.ClockPosition">
     <value nick="before" value="0"/>
-    <value nick="after"  value="1"/>
+    <value nick="after" value="1"/>
   </enum>
   <enum id="dev.lethil.lesion.ClockFormatMode">
     <value nick="default" value="0"/>
-    <value nick="custom"  value="1"/>
+    <value nick="custom" value="1"/>
   </enum>
+
+  <!-- Apps's Enums -->
+  <enum id="dev.lethil.lesion.HorizontalPosition">
+    <value nick="left" value="0"/>
+    <value nick="right" value="1"/>
+  </enum>
+
+  <!-- Common: BoxPosition for Indicator (4 sides) -->
+  <enum id="dev.lethil.lesion.BoxPosition">
+    <value nick="top" value="0"/>
+    <value nick="right" value="1"/>
+    <value nick="bottom" value="2"/>
+    <value nick="left" value="3"/>
+  </enum>  
 
   <!-- Dock's Enums -->
   <enum id="dev.lethil.lesion.DockPosition">
     <value nick="bottom" value="0"/>
-    <value nick="left"   value="1"/>
-    <value nick="right"  value="2"/>
-    <value nick="top"    value="3"/>
+    <value nick="left" value="1"/>
+    <value nick="right" value="2"/>
+    <value nick="top" value="3"/>
   </enum>
 
   <schema id="dev.lethil.lesion" path="/dev/lethil/lesion/">
@@ -41,7 +55,7 @@
       <summary>Enabled CSS file names</summary>
       <description>List of CSS files in style/bundled/ that are currently applied.</description>
     </key>
-    
+
     <!-- Custom User Styles -->
     <key name="custom-styles" type="a(sb)">
       <default>[]</default>
@@ -55,7 +69,7 @@
       <summary>Page to open</summary>
     </key>
 
-    <!-- Indicator Options -->
+    <!-- Indicator -->
     <key name="indicator-enabled" type="b">
       <default>true</default>
       <summary>Show the extension indicator in the panel</summary>
@@ -155,7 +169,67 @@
     <key name="clock-seconds" type="b"><default>false</default></key>
     <key name="weather-enabled" type="b"><default>false</default></key>
     -->
+
+    <!-- Apps -->
+    <key name="apps-icon-size" type="i"><default>16</default></key>
+    <key name="apps-icon-desaturate" type="b"><default>true</default></key>
     
+    <!-- Opacity Customization -->
+    <key name="apps-opacity-running" type="i"><default>255</default></key>
+    <key name="apps-opacity-stopped" type="i"><default>160</default></key>
+
+    <!-- Indicator Configuration -->
+    <key name="apps-indicator-pos" enum="dev.lethil.lesion.BoxPosition"><default>'bottom'</default></key> 
+    <key name="apps-indicator-offset" type="i"><default>2</default></key>
+    <key name="apps-indicator-width" type="i"><default>4</default></key>
+    <key name="apps-indicator-height" type="i"><default>4</default></key>
+    <key name="apps-indicator-radius" type="i"><default>99</default></key>
+    <key name="apps-indicator-color" type="s"><default>'#ffffff'</default></key>
+
+    <!-- Favorites -->
+    <key name="apps-favorites-enabled" type="b">
+      <default>false</default>
+    </key>
+    <key name="apps-favorites-pos" enum="dev.lethil.lesion.HorizontalPosition">
+      <default>'left'</default>
+    </key>
+    <key name="apps-favorites-index" type="i">
+      <default>0</default>
+    </key>
+
+    <!-- Running Apps -->
+    <key name="apps-running-enabled" type="b">
+      <default>false</default>
+    </key>
+    <key name="apps-running-pos" enum="dev.lethil.lesion.HorizontalPosition">
+      <default>'left'</default>
+    </key>
+    <key name="apps-running-index" type="i">
+      <default>1</default>
+    </key>
+
+    <!-- Disks -->
+    <key name="apps-disks-enabled" type="b">
+      <default>false</default>
+    </key>
+    <key name="apps-disks-pos" enum="dev.lethil.lesion.HorizontalPosition">
+      <default>'right'</default>
+    </key>
+    <key name="apps-disks-index" type="i">
+      <default>0</default>
+    </key>
+
+    <!-- Trash -->
+    <key name="apps-trash-enabled" type="b">
+      <default>false</default>
+    </key>
+    <key name="apps-trash-pos" enum="dev.lethil.lesion.HorizontalPosition">
+      <default>'right'</default>
+    </key>
+    <key name="apps-trash-index" type="i">
+      <default>1</default>
+    </key>
+
     <!-- Dock -->
     <key name="dock-enabled" type="b">
       <default>false</default>
@@ -233,7 +307,7 @@
     <key name="dock-hover-scale" type="d">
       <default>1.0</default>
       <summary>Scale factor on hover (1.0 to 1.5)</summary>
-    </key>    
+    </key>
 
   </schema>
 </schemalist>

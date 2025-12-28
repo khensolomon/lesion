@@ -13,7 +13,14 @@
     /* background-color: transparent !important;
     background-image: none !important;
     box-shadow: none !important; */
-    padding: 0px !important;
+    min-width: 25px;
+}
+
+#panel .panel-button {
+    -natural-hpadding: 7px;  
+    -minimum-hpadding: 0px;
+    margin: 0 !important;
+    
 }
 
 /* #panel .clock-display:hover{
@@ -36,4 +43,32 @@
     /* background-color: rgba(41, 41, 41, 0.60); */
     /* background:rgba(0, 0, 0, 0.0);  */
      /* color: rgba(42, 87, 79, 0.685);  */
+}
+
+/* Workspace indicator button */
+.workspace-indicator,   /* Or try .workspace-dot if it's the line/dash */
+.panel-button .workspace-dot {
+    margin: 0 2px;      /* Reduce around the dash/number */
+    spacing: 2px;        /* If it uses StBoxLayout spacing */
+}
+
+
+
+
+/* Target only the aggregate/system menu button for outer padding */
+#panel .aggregate-menu.panel-button {
+    -natural-hpadding: 2px;   /* Reduce horizontal padding around the whole button */
+    -minimum-hpadding: 1px;   /* Minimum to prevent total collapse */
+}
+
+/* Target icons specifically inside the aggregate menu for internal spacing */
+/* .aggregate-menu .system-status-icon {
+    padding-left: 2px;
+    padding-right: 2px;
+} */
+
+/* Alternative/more precise for the container holding the icons */
+#panel .system-status-icon {
+    padding: 0 2px; 
+    margin: 0; 
 }
