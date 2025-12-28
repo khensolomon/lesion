@@ -29,7 +29,6 @@ export const AppConfig = {
         url: '',
         links: {},
         "settings-schema": "", // Standard Key
-        "schema-id": "",       // Custom Key
         "developer-name": ""
     },
     
@@ -45,7 +44,7 @@ export const AppConfig = {
         }
         this.prefix = `[${this.metadata.name}]`;
 
-        this.appId = metadata.uuid || metadata['application-id'] || this.defaults.id;
+        this.appId = metadata.uuid || this.defaults.id;
     },
 
     get uuid() {
@@ -58,9 +57,8 @@ export const AppConfig = {
 
     get schemaId() {
         // FIX: Prioritize the standard 'settings-schema' key which usually matches the XML.
-        // Fallback to 'schema-id' (custom) or a hardcoded default.
+        // Fallback to a hardcoded default.
         return this.metadata["settings-schema"] || 
-               this.metadata["schema-id"] || 
                "org.gnome.shell.extensions.lesion";
     },
     
