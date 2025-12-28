@@ -9,6 +9,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js'; 
 import { ExtensionComponent } from './base.js';
+import { logError } from '../util/logger.js'; 
 
 // Define a standard size for panel icons
 const PANEL_ICON_SIZE = 16;
@@ -19,6 +20,11 @@ class AppPanelButton extends PanelMenu.Button {
     _init(icon, name, clickCallback, menuCallback) {
         super._init(0.0, name);
         
+        // FORCE CONSISTENCY: 
+        // 1. Reset min-width to 0 (Themes often enforce ~30px, causing uneven gaps)
+        // 2. Standardize margin/padding for both Left and Right panel boxes
+        this.style = 'min-width: 0px; margin: 0 2px; padding: 0 4px;'; 
+
         this._box = new St.Widget({ 
             layout_manager: new Clutter.BinLayout(),
             x_expand: true, 
@@ -401,6 +407,30 @@ export class AppsManager extends ExtensionComponent {
         dialog.open();
     }
 
+    _safelyRemove(mount) {
+        const name = mount.get_name();
+        const callback = (source, res) => {
+            try {
+                if (source.eject_with_operation_finish)
+                    source.eject_with_operation_finish(res);
+                else
+                    source.unmount_with_operation_finish(res);
+                
+                // Show Success Notification
+                Main.notify('Safely Removed', `${name} can now be unplugged.`);
+            } catch (e) {
+                Main.notify('Safely Remove Failed', e.message);
+                logError(e, 'Safely Remove Failed');
+            }
+        };
+
+        if (mount.can_eject()) {
+            mount.eject_with_operation(Gio.MountUnmountFlags.NONE, null, null, callback);
+        } else {
+            mount.unmount_with_operation(Gio.MountUnmountFlags.NONE, null, null, callback);
+        }
+    }
+
     // --- TRASH ---
     _syncTrash() {
         if (this._items.trash) {
@@ -430,17 +460,14 @@ export class AppsManager extends ExtensionComponent {
         let isTrashFull = false;
         try {
             const file = Gio.File.new_for_uri('trash:///');
-            // Check content for menu state
             const enumerator = file.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
             if (enumerator.next_file(null) !== null) isTrashFull = true;
             enumerator.close(null);
 
-            // Try to get default system icon (Dynamic state)
             const info = file.query_info('standard::icon', Gio.FileQueryInfoFlags.NONE, null);
             if (info) gicon = info.get_icon();
         } catch (e) {}
 
-        // Fallback only if system query failed
         if (!gicon) {
              const iconName = isTrashFull ? 'user-trash-full-symbolic' : 'user-trash-symbolic';
              gicon = new Gio.ThemedIcon({ name: iconName });
@@ -475,7 +502,7 @@ export class AppsManager extends ExtensionComponent {
             }
         );
         
-        btn._windows = trashWindows; // Store for visuals
+        btn._windows = trashWindows;
         btn._manualRunning = trashWindows.length > 0;
         btn._manualFocused = trashWindows.some(w => w.has_focus());
 
@@ -494,11 +521,14 @@ export class AppsManager extends ExtensionComponent {
         const pos = this._getPos('disks');
         const idx = this._getIndex('disks');
         const size = this.getSettings().get_int('apps-icon-size');
+        const seenNames = new Set();
 
         mounts.forEach((mount, i) => {
             const name = mount.get_name();
-            let mountWindows = [];
+            if (seenNames.has(name)) return;
+            seenNames.add(name);
 
+            let mountWindows = [];
             const fileManager = this._appSystem.lookup_app('org.gnome.Nautilus.desktop');
             if (fileManager) {
                 fileManager.get_windows().forEach(w => {
@@ -535,11 +565,13 @@ export class AppsManager extends ExtensionComponent {
                         });
                     }
                     this._appendSeparator(menu);
-                    this._appendAction(menu, 'Unmount', () => mount.unmount_with_operation(0, null, null, null));
+                    
+                    const actionName = mount.can_eject() ? 'Eject' : 'Unmount';
+                    this._appendAction(menu, actionName, () => this._safelyRemove(mount));
                 }
             );
             
-            btn._windows = mountWindows; // Store for visuals
+            btn._windows = mountWindows;
             btn._manualRunning = mountWindows.length > 0;
             btn._manualFocused = mountWindows.some(w => w.has_focus());
 
