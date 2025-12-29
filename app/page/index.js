@@ -2,7 +2,7 @@ import { createHomeUI } from "./home.js";
 import { createAboutUI } from "./about.js";
 import { createCssUI } from "./css.js";
 import { createWallpaperUI } from "./wallpaper.js";
-import { createShowAppsUI } from './showapps.js';
+import { createAppButtonUI } from './appbutton.js';
 import { createCornersUI } from './corners.js';
 import { createGeometryUI } from './geometry.js';
 import { createClockUI } from './clock.js';
@@ -96,6 +96,19 @@ export function getPages() {
           keywords: ['width', 'height', 'position', 'size', 'remember'],
           ui: createGeometryUI,
         },
+      ],
+    },
+    {
+      title: "Panel",
+      items: [
+        {
+          id: "appbutton",
+          title: "Start",
+          icon: "start-here-symbolic",
+          description: "Show or hide the Show Apps button on the panel",
+          keywords: ["applications", "menu", "grid", "overview", "launcher"],
+          ui: createAppButtonUI,
+        },
         {
           id: "clock",
           title: "Clock",
@@ -103,19 +116,6 @@ export function getPages() {
           description: "Clock position on the panel",
           keywords: ["clock", "time", "date", "panel", "position"],
           ui: createClockUI,
-        },
-      ],
-    },
-    {
-      title: "Panel",
-      items: [
-        {
-          id: "showapps",
-          title: "Start",
-          icon: "start-here-symbolic",
-          description: "Show or hide the Show Apps button on the panel",
-          keywords: ["applications", "menu", "grid", "overview", "launcher"],
-          ui: createShowAppsUI,
         },
         // {
         //     id: 'dock',

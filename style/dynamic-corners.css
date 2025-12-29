@@ -1,0 +1,11 @@
+
+            .window-clone-border, 
+            .modal-dialog, 
+            .popup-menu-content, 
+            .workspace-thumbnail-indicator,
+            .search-section-content,
+            .switcher-list {
+                border-radius: 12px !important;
+            }
+            
+        

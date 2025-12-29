@@ -10,7 +10,7 @@ import { AppsManager } from './apps.js';
 
 // Panel Widgets
 import { Indicator } from '../panel/indicator.js';
-import { AppButton } from '../panel/showapps.js';
+import { AppButton } from '../panel/appbutton.js';
 
 /**
  * Returns the list of component classes to be instantiated.

@@ -6,7 +6,7 @@ import { AppConfig } from '../config.js';
 
 let _activeIconChooser = null;
 
-export function createShowAppsUI() {
+export function createAppButtonUI() {
     const page = new Adw.PreferencesPage();
     const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
 
