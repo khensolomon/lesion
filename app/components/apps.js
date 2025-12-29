@@ -11,7 +11,6 @@ import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 import { ExtensionComponent } from './base.js';
 import { logError } from '../util/logger.js'; 
 
-// Define a standard size for panel icons
 const PANEL_ICON_SIZE = 16;
 
 // --- BASE BUTTON CLASS ---
@@ -20,10 +19,7 @@ class AppPanelButton extends PanelMenu.Button {
     _init(icon, name, clickCallback, menuCallback) {
         super._init(0.0, name);
         
-        // FORCE CONSISTENCY: 
-        // 1. Reset min-width to 0 (Themes often enforce ~30px, causing uneven gaps)
-        // 2. Standardize margin/padding for both Left and Right panel boxes
-        this.style = 'min-width: 0px; margin: 0 0px; padding: 0 4px;'; 
+        this.style = 'min-width: 0px; margin: 0 2px; padding: 0 4px;'; 
 
         this._box = new St.Widget({ 
             layout_manager: new Clutter.BinLayout(),
@@ -135,11 +131,10 @@ export class AppsManager extends ExtensionComponent {
         this._windowSignals = new Map();
 
         // Observers
-        const updateAll = () => this._updateState();
+        // Visual updates only (no rebuild)
         const visualUpdate = () => this._updateVisuals();
-
-        this.observe('changed::apps-icon-size', updateAll);
-        this.observe('changed::apps-icon-desaturate', updateAll);
+        this.observe('changed::apps-icon-size', () => this._rebuildAll()); // Size change needs rebuild
+        this.observe('changed::apps-icon-desaturate', () => this._rebuildAll());
         this.observe('changed::apps-opacity-running', visualUpdate);
         this.observe('changed::apps-opacity-stopped', visualUpdate);
         
@@ -147,22 +142,34 @@ export class AppsManager extends ExtensionComponent {
             this.observe(`changed::apps-indicator-${k}`, visualUpdate);
         });
 
+        // Structural updates per section
         ['favorites', 'running', 'disks', 'trash'].forEach(g => {
-            this.observe(`changed::apps-${g}-enabled`, updateAll);
-            this.observe(`changed::apps-${g}-pos`, updateAll);
-            this.observe(`changed::apps-${g}-index`, updateAll);
+            const rebuild = () => {
+                if (g === 'favorites') this._syncFavorites();
+                else if (g === 'running') this._syncRunning(true); // Force rebuild
+                else if (g === 'disks') this._syncDisks();
+                else if (g === 'trash') this._syncTrash();
+                this._updateVisuals();
+            };
+            this.observe(`changed::apps-${g}-enabled`, rebuild);
+            this.observe(`changed::apps-${g}-pos`, rebuild);
+            this.observe(`changed::apps-${g}-index`, rebuild);
         });
 
-        // Signals
+        // System Signals
         const shellSettings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
         this._signals.push({
             obj: shellSettings,
-            id: shellSettings.connect('changed::favorite-apps', updateAll) 
+            id: shellSettings.connect('changed::favorite-apps', () => {
+                this._syncFavorites();
+                // Running apps might need update if exclusion changed
+                this._syncRunning(); 
+            }) 
         });
         
         this._signals.push({
             obj: this._appSystem,
-            id: this._appSystem.connect('installed-changed', updateAll)
+            id: this._appSystem.connect('installed-changed', () => this._syncRunning(true))
         });
 
         this._signals.push({
@@ -172,9 +179,15 @@ export class AppsManager extends ExtensionComponent {
         
         this._signals.push({
             obj: global.display,
+            id: global.display.connect('notify::focus-window', visualUpdate)
+        });
+
+        // Window Lifecycle
+        this._signals.push({
+            obj: global.display,
             id: global.display.connect('window-created', (d, w) => {
                 this._trackWindow(w);
-                updateAll();
+                this._handleWindowChange();
             })
         });
         
@@ -185,14 +198,13 @@ export class AppsManager extends ExtensionComponent {
 
         this._signals.push({
             obj: this._volumeMonitor,
-            id: this._volumeMonitor.connect('mount-added', updateAll)
+            id: this._volumeMonitor.connect('mount-added', () => this._syncDisks())
         });
         this._signals.push({
             obj: this._volumeMonitor,
-            id: this._volumeMonitor.connect('mount-removed', updateAll)
+            id: this._volumeMonitor.connect('mount-removed', () => this._syncDisks())
         });
 
-        // Monitor Trash Changes
         try {
             const trashFile = Gio.File.new_for_uri('trash:///');
             this._trashMonitor = trashFile.monitor_directory(Gio.FileMonitorFlags.NONE, null);
@@ -209,14 +221,15 @@ export class AppsManager extends ExtensionComponent {
 
         global.display.list_all_windows().forEach(win => this._trackWindow(win));
 
-        this._updateState();
+        // Initial Build
+        this._rebuildAll();
     }
 
     onDisable() {
         this._clearAll();
         if (this._windowSignals) {
-            for (const [win, id] of this._windowSignals) {
-                try { win.disconnect(id); } catch(e) {}
+            for (const [win, ids] of this._windowSignals) {
+                ids.forEach(id => { try { win.disconnect(id); } catch(e){} });
             }
             this._windowSignals.clear();
         }
@@ -228,14 +241,34 @@ export class AppsManager extends ExtensionComponent {
 
     _trackWindow(win) {
         if (!win || this._windowSignals.has(win)) return;
-        const id = win.connect('unmanaged', () => {
+        const signals = [];
+
+        signals.push(win.connect('unmanaged', () => {
+            const ids = this._windowSignals.get(win);
+            if (ids) ids.forEach(id => { try { win.disconnect(id); } catch(e){} });
             this._windowSignals.delete(win);
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
-                this._updateState(); 
-                return GLib.SOURCE_REMOVE;
-            });
+            this._handleWindowChange();
+        }));
+
+        signals.push(win.connect('notify::title', () => {
+            const app = this._winTracker.get_window_app(win);
+            if (app && (app.get_id().includes('nautilus') || app.get_id().includes('org.gnome.Nautilus'))) {
+                this._handleWindowChange();
+            }
+        }));
+
+        this._windowSignals.set(win, signals);
+    }
+
+    // Called when window structure changes (Open/Close/Title)
+    _handleWindowChange() {
+        // Debounce slightly to allow shell to update states
+        if (this._updateTimeout) GLib.source_remove(this._updateTimeout);
+        this._updateTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+            this._updateState();
+            this._updateTimeout = null;
+            return GLib.SOURCE_REMOVE;
         });
-        this._windowSignals.set(win, id);
     }
 
     _clearAll() {
@@ -257,16 +290,57 @@ export class AppsManager extends ExtensionComponent {
         this._items[group] = [];
     }
 
-    _updateState() {
-        this._handledWindows.clear();
+    _rebuildAll() {
         this._syncTrash();
         this._syncDisks();
         this._syncFavorites();
-        this._syncRunning();
+        this._syncRunning(true); // Force rebuild
         this._updateVisuals();
     }
 
-    // --- VISUALS ---
+    _updateState() {
+        // 1. Recalculate Claimed Windows (Trash/Disk/Favorites)
+        // We do NOT rebuild buttons for these groups here, we just update internal state
+        this._handledWindows.clear();
+        
+        // Trash
+        if (this._items.trash && this.getSettings().get_boolean('apps-trash-enabled')) {
+            const fm = this._appSystem.lookup_app('org.gnome.Nautilus.desktop'); 
+            if (fm) {
+                const wins = fm.get_windows().filter(w => w.get_title().includes('Trash'));
+                this._items.trash._windows = wins;
+                wins.forEach(w => this._handledWindows.add(w));
+            }
+        }
+
+        // Disks
+        if (this.getSettings().get_boolean('apps-disks-enabled')) {
+            const fm = this._appSystem.lookup_app('org.gnome.Nautilus.desktop');
+            if (fm) {
+                this._items.disks.forEach(btn => {
+                    const name = btn.get_accessible_name();
+                    const wins = fm.get_windows().filter(w => w.get_title().includes(name));
+                    btn._windows = wins;
+                    wins.forEach(w => this._handledWindows.add(w));
+                });
+            }
+        }
+
+        // Favorites
+        if (this.getSettings().get_boolean('apps-favorites-enabled')) {
+            this._items.favorites.forEach(btn => {
+                if (btn._app) {
+                    btn._app.get_windows().forEach(w => this._handledWindows.add(w));
+                }
+            });
+        }
+
+        // 2. Sync Running Apps (Smart Diff)
+        this._syncRunning(false); 
+
+        // 3. Update Visuals
+        this._updateVisuals();
+    }
 
     _getIndicatorSettings() {
         return {
@@ -289,11 +363,32 @@ export class AppsManager extends ExtensionComponent {
         return icon;
     }
 
+    _isFileManager(app) {
+        if (!app) return false;
+        const id = app.get_id();
+        return id.includes('nautilus') || id.includes('org.gnome.Nautilus');
+    }
+
     _updateVisuals() {
         const ind = this._getIndicatorSettings();
         const opacityRunning = this.getSettings().get_int('apps-opacity-running');
         const opacityStopped = this.getSettings().get_int('apps-opacity-stopped');
-        const focusApp = this._winTracker.focus_app;
+        
+        const focusWindow = global.display.focus_window;
+        let activeCustomBtn = null; 
+
+        // Helper to check custom button focus
+        const checkBtnFocus = (btn) => {
+            if (!btn || !btn._windows) return false;
+            if (focusWindow && btn._windows.includes(focusWindow)) {
+                activeCustomBtn = btn;
+                return true;
+            }
+            return false;
+        };
+
+        if (this._items.trash) checkBtnFocus(this._items.trash);
+        this._items.disks.forEach(checkBtnFocus);
 
         const apply = (btn, isRunning, isFocused) => {
             if (!btn || !btn.iconActor) return;
@@ -310,33 +405,45 @@ export class AppsManager extends ExtensionComponent {
             btn.setVisualState(targetOpacity, isRunning);
         };
 
-        if (this._items.trash) apply(this._items.trash, this._items.trash._manualRunning, this._items.trash._manualFocused);
-        this._items.disks.forEach(btn => apply(btn, btn._manualRunning, btn._manualFocused));
+        // Trash
+        if (this._items.trash) {
+            const running = this._items.trash._windows && this._items.trash._windows.length > 0;
+            const focused = (activeCustomBtn === this._items.trash);
+            apply(this._items.trash, running, focused);
+        }
+
+        // Disks
+        this._items.disks.forEach(btn => {
+            const running = btn._windows && btn._windows.length > 0;
+            const focused = (activeCustomBtn === btn);
+            apply(btn, running, focused);
+        });
         
+        // Favorites
+        const focusApp = this._winTracker.focus_app;
         this._items.favorites.forEach(btn => {
             if (btn._app) {
                 const running = btn._app.state === Shell.AppState.RUNNING;
-                const focused = focusApp === btn._app;
+                let focused = (focusApp === btn._app);
+                if (focused && activeCustomBtn && this._isFileManager(btn._app)) focused = false;
                 apply(btn, running, focused);
             }
         });
 
+        // Running
         this._items.running.forEach(btn => {
             if (btn._app) {
-                const focused = focusApp === btn._app;
+                const focused = (focusApp === btn._app);
                 apply(btn, true, focused);
             }
         });
     }
 
     // --- MENU HELPERS ---
-
     _appendAction(menu, label, callback, destructive = false) {
         const item = new PopupMenu.PopupMenuItem(label);
         if (destructive) item.actor.add_style_class_name('button-destructive-action');
-        item.connect('activate', () => {
-            callback();
-        });
+        item.connect('activate', () => callback());
         menu.addMenuItem(item);
     }
 
@@ -378,32 +485,22 @@ export class AppsManager extends ExtensionComponent {
     _confirmEmptyTrash() {
         const dialog = new ModalDialog.ModalDialog();
         dialog.setButtons([
-            { 
-                label: 'Cancel', 
-                action: () => dialog.close(), 
-                key: Clutter.KEY_Escape 
-            },
+            { label: 'Cancel', action: () => dialog.close(), key: Clutter.KEY_Escape },
             { 
                 label: 'Empty Trash', 
                 action: () => {
                     dialog.close();
-                    try {
-                        GLib.spawn_command_line_async('gio trash --empty');
-                    } catch(e) {
-                        logError(e, 'Failed to empty trash');
-                    }
+                    try { GLib.spawn_command_line_async('gio trash --empty'); } catch(e) {}
                 },
                 key: Clutter.KEY_Return
             }
         ]);
-        
         const content = new St.Label({ 
             style_class: 'message-dialog-content',
             text: 'Are you sure you want to delete all items in the Trash?',
             x_align: Clutter.ActorAlign.CENTER
         });
         dialog.contentLayout.add_child(content);
-        
         dialog.open();
     }
 
@@ -411,47 +508,30 @@ export class AppsManager extends ExtensionComponent {
         const name = mount.get_name();
         const callback = (source, res) => {
             try {
-                if (source.eject_with_operation_finish)
-                    source.eject_with_operation_finish(res);
-                else
-                    source.unmount_with_operation_finish(res);
-                
-                // Show Success Notification
+                if (source.eject_with_operation_finish) source.eject_with_operation_finish(res);
+                else source.unmount_with_operation_finish(res);
                 Main.notify('Safely Removed', `${name} can now be unplugged.`);
             } catch (e) {
                 Main.notify('Safely Remove Failed', e.message);
                 logError(e, 'Safely Remove Failed');
             }
         };
-
-        if (mount.can_eject()) {
-            mount.eject_with_operation(Gio.MountUnmountFlags.NONE, null, null, callback);
-        } else {
-            mount.unmount_with_operation(Gio.MountUnmountFlags.NONE, null, null, callback);
-        }
+        if (mount.can_eject()) mount.eject_with_operation(Gio.MountUnmountFlags.NONE, null, null, callback);
+        else mount.unmount_with_operation(Gio.MountUnmountFlags.NONE, null, null, callback);
     }
 
-    // --- TRASH ---
+    // --- SECTIONS ---
+
     _syncTrash() {
         if (this._items.trash) {
             if (this._items.trash._role) delete Main.panel.statusArea[this._items.trash._role];
             this._items.trash.destroy();
             this._items.trash = null;
         }
-
         if (!this.getSettings().get_boolean('apps-trash-enabled')) return;
 
-        let trashWindows = [];
-        const fileManager = this._appSystem.lookup_app('org.gnome.Nautilus.desktop'); 
-        if (fileManager) {
-            fileManager.get_windows().forEach(w => {
-                if (w.get_title().includes('Trash')) {
-                    trashWindows.push(w);
-                    this._handledWindows.add(w);
-                }
-            });
-        }
-
+        // Note: Window handling moved to _updateVisuals via _handledWindows update
+        // Here we just build the button structure
         const size = this.getSettings().get_int('apps-icon-size');
         const pos = this._getPos('trash');
         const idx = this._getIndex('trash');
@@ -463,7 +543,6 @@ export class AppsManager extends ExtensionComponent {
             const enumerator = file.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
             if (enumerator.next_file(null) !== null) isTrashFull = true;
             enumerator.close(null);
-
             const info = file.query_info('standard::icon', Gio.FileQueryInfoFlags.NONE, null);
             if (info) gicon = info.get_icon();
         } catch (e) {}
@@ -479,22 +558,23 @@ export class AppsManager extends ExtensionComponent {
         const btn = new AppPanelButton(
             icon, 'Trash',
             () => {
-                if (trashWindows.length > 0) {
-                    const focusWin = trashWindows.find(w => w.has_focus());
-                    if (focusWin) trashWindows.forEach(w => w.minimize());
-                    else trashWindows[0].activate();
+                const wins = btn._windows || [];
+                if (wins.length > 0) {
+                    const focusWin = wins.find(w => w.has_focus());
+                    if (focusWin) wins.forEach(w => w.minimize());
+                    else wins[0].activate();
                 } else {
                     Gio.AppInfo.launch_default_for_uri('trash:///', null);
                 }
             },
             (menu) => {
                 menu.removeAll();
-                if (trashWindows.length > 0) {
-                    this._appendAction(menu, 'Close Trash', () => trashWindows.forEach(w => w.delete(global.get_current_time())));
+                const wins = btn._windows || [];
+                if (wins.length > 0) {
+                    this._appendAction(menu, 'Close Trash', () => wins.forEach(w => w.delete(global.get_current_time())));
                 } else {
                     this._appendAction(menu, 'Open Trash', () => Gio.AppInfo.launch_default_for_uri('trash:///', null));
                 }
-                
                 if (isTrashFull) {
                     this._appendSeparator(menu);
                     this._appendAction(menu, 'Empty Trash', () => this._confirmEmptyTrash(), true);
@@ -502,17 +582,12 @@ export class AppsManager extends ExtensionComponent {
             }
         );
         
-        btn._windows = trashWindows;
-        btn._manualRunning = trashWindows.length > 0;
-        btn._manualFocused = trashWindows.some(w => w.has_focus());
-
         const role = 'lesion-trash';
         btn._role = role;
         Main.panel.addToStatusArea(role, btn, idx, pos);
         this._items.trash = btn;
     }
 
-    // --- DISKS ---
     _syncDisks() {
         this._clearGroup('disks');
         if (!this.getSettings().get_boolean('apps-disks-enabled')) return;
@@ -528,27 +603,17 @@ export class AppsManager extends ExtensionComponent {
             if (seenNames.has(name)) return;
             seenNames.add(name);
 
-            let mountWindows = [];
-            const fileManager = this._appSystem.lookup_app('org.gnome.Nautilus.desktop');
-            if (fileManager) {
-                fileManager.get_windows().forEach(w => {
-                    if (w.get_title().includes(name)) {
-                        mountWindows.push(w);
-                        this._handledWindows.add(w);
-                    }
-                });
-            }
-
             const icon = new St.Icon({ gicon: mount.get_icon(), icon_size: size, style_class: 'system-status-icon' });
             this._applyEffects(icon);
 
             const btn = new AppPanelButton(
                 icon, name,
                 () => {
-                    if (mountWindows.length > 0) {
-                        const focusWin = mountWindows.find(w => w.has_focus());
-                        if (focusWin) mountWindows.forEach(w => w.minimize());
-                        else mountWindows[0].activate();
+                    const wins = btn._windows || [];
+                    if (wins.length > 0) {
+                        const focusWin = wins.find(w => w.has_focus());
+                        if (focusWin) wins.forEach(w => w.minimize());
+                        else wins[0].activate();
                     } else {
                         const f = mount.get_root();
                         Gio.AppInfo.launch_default_for_uri(f.get_uri(), null);
@@ -556,8 +621,9 @@ export class AppsManager extends ExtensionComponent {
                 },
                 (menu) => {
                     menu.removeAll();
-                    if (mountWindows.length > 0) {
-                        this._appendAction(menu, 'Close', () => mountWindows.forEach(w => w.delete(global.get_current_time())));
+                    const wins = btn._windows || [];
+                    if (wins.length > 0) {
+                        this._appendAction(menu, 'Close', () => wins.forEach(w => w.delete(global.get_current_time())));
                     } else {
                         this._appendAction(menu, 'Open', () => {
                             const f = mount.get_root();
@@ -565,16 +631,11 @@ export class AppsManager extends ExtensionComponent {
                         });
                     }
                     this._appendSeparator(menu);
-                    
                     const actionName = mount.can_eject() ? 'Eject' : 'Unmount';
                     this._appendAction(menu, actionName, () => this._safelyRemove(mount));
                 }
             );
             
-            btn._windows = mountWindows;
-            btn._manualRunning = mountWindows.length > 0;
-            btn._manualFocused = mountWindows.some(w => w.has_focus());
-
             const role = `lesion-disk-${i}`;
             btn._role = role;
             Main.panel.addToStatusArea(role, btn, idx + i, pos);
@@ -582,7 +643,6 @@ export class AppsManager extends ExtensionComponent {
         });
     }
 
-    // --- FAVORITES ---
     _syncFavorites() {
         this._clearGroup('favorites');
         if (!this.getSettings().get_boolean('apps-favorites-enabled')) return;
@@ -595,8 +655,6 @@ export class AppsManager extends ExtensionComponent {
         favorites.forEach((appId, i) => {
             const app = this._appSystem.lookup_app(appId);
             if (!app) return;
-
-            app.get_windows().forEach(w => this._handledWindows.add(w));
 
             const icon = app.create_icon_texture(size);
             this._applyEffects(icon);
@@ -615,23 +673,55 @@ export class AppsManager extends ExtensionComponent {
         });
     }
 
-    // --- RUNNING ---
-    _syncRunning() {
-        this._clearGroup('running');
-        if (!this.getSettings().get_boolean('apps-running-enabled')) return;
+    _syncRunning(forceRebuild = false) {
+        if (!this.getSettings().get_boolean('apps-running-enabled')) {
+            this._clearGroup('running');
+            return;
+        }
 
-        const running = this._appSystem.get_running();
+        const runningApps = this._appSystem.get_running();
         const pos = this._getPos('running');
         const idx = this._getIndex('running');
         const size = this.getSettings().get_int('apps-icon-size');
 
-        running.forEach((app, i) => {
+        const favEnabled = this.getSettings().get_boolean('apps-favorites-enabled');
+        let favIds = [];
+        if (favEnabled) {
+            const shellSettings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
+            favIds = shellSettings.get_strv('favorite-apps');
+        }
+
+        // 1. Filter: Determine which apps actually need a button
+        const appsToShow = runningApps.filter(app => {
+            if (favEnabled && favIds.includes(app.get_id())) return false;
+            
             const windows = app.get_windows();
+            // If all windows are claimed (by Trash/Disk), don't show
             const hasUnclaimed = windows.some(w => !this._handledWindows.has(w));
+            if (!hasUnclaimed && windows.length > 0) return false;
+            if (windows.length === 0) return false;
+            
+            return true;
+        });
 
-            if (!hasUnclaimed && windows.length > 0) return;
-            if (windows.length === 0) return;
+        // 2. Diffing Strategy: Avoid rebuild if list matches
+        // If forceRebuild is true (e.g. icon size changed), skip check
+        if (!forceRebuild) {
+            const currentIds = this._items.running.map(btn => btn._app ? btn._app.get_id() : '');
+            const newIds = appsToShow.map(app => app.get_id());
+            
+            // Simple array comparison
+            const isSame = currentIds.length === newIds.length && currentIds.every((id, index) => id === newIds[index]);
+            
+            if (isSame) {
+                return; // Nothing changed structurally
+            }
+        }
 
+        // 3. Rebuild
+        this._clearGroup('running');
+
+        appsToShow.forEach((app, i) => {
             const icon = app.create_icon_texture(size);
             this._applyEffects(icon);
 
