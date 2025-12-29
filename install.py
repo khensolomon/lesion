@@ -1,4 +1,30 @@
 #!/usr/bin/env python3
+"""
+Development installer for GNOME Shell extensions."
+"Automatically reads uuid, settings-schema, and name from metadata.json."
+"Creates/updates a symlink for live development and handles GSettings schema compilation "
+"(both locally in extension and globally).
+
+Usage examples:
+  1. Run inside your extension directory (recommended):
+       ./install.py
+
+  2. Specify source directory explicitly:
+       ./install.py --src ~/dev/lesion
+
+  3. Override UUID and schema (e.g., for testing a different ID):
+       ./install.py --uuid lesion@test.com --schema dev.lethil.lesion.test
+
+  4. Quick setup for a new extension in the default location:
+       ./install.py --src ~/dev/my-new-extension
+
+Tips:
+  • Rerun this script whenever you modify extension.js, stylesheet.css, or *.gschema.xml
+  • To reload the extension after code changes:
+        - On X11: Alt+F2 → type 'r' → Enter
+        - On Wayland: Log out and log back in, or use 'gnome-extensions disable/enable'
+  • This script is safe to run multiple times — it updates symlinks and recompiles schemas idempotently.
+"""
 import os
 import shutil
 import subprocess
