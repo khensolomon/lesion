@@ -10,7 +10,7 @@ import { createAppsUI } from './apps.js';
 // import { createSettingUI } from "./setting.js";
 // import { createDockUI } from './dock.js';
 // import { createMimicUI } from './mimic.js';
-import Adw from "gi://Adw";
+// import Adw from "gi://Adw";
 
 export function getPages() {
   return [
@@ -73,8 +73,8 @@ export function getPages() {
         //   ],
         // },
         {
-          id: "themes",
-          title: "Themes & Styles",
+          id: "styles",
+          title: "Styles",
           icon: "preferences-desktop-theme-symbolic",
           description: "Manage bundled and custom CSS",
           keywords: ["css", "style", "theme", "color", "custom"],
@@ -97,8 +97,8 @@ export function getPages() {
           ui: createGeometryUI,
         },
         {
-          id: "panel-clock",
-          title: "Data & Time",
+          id: "clock",
+          title: "Clock",
           icon: "preferences-system-time-symbolic",
           description: "Clock position on the panel",
           keywords: ["clock", "time", "date", "panel", "position"],

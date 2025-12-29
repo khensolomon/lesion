@@ -23,7 +23,7 @@ class AppPanelButton extends PanelMenu.Button {
         // FORCE CONSISTENCY: 
         // 1. Reset min-width to 0 (Themes often enforce ~30px, causing uneven gaps)
         // 2. Standardize margin/padding for both Left and Right panel boxes
-        this.style = 'min-width: 0px; margin: 0 2px; padding: 0 4px;'; 
+        this.style = 'min-width: 0px; margin: 0 0px; padding: 0 4px;'; 
 
         this._box = new St.Widget({ 
             layout_manager: new Clutter.BinLayout(),
