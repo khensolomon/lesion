@@ -7,11 +7,13 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { AppConfig } from '../config.js';
 import { log, logError } from '../util/logger.js';
 
-export class ShowAppsButton {
+// Renamed class from ShowAppsButton to AppButton for brevity and clarity
+export class AppButton {
     constructor(ext) {
         this._extension = ext;
         this._settings = null;
         this._settingsSignals = [];
+        this._overviewSignals = []; // Store signal objects {obj, id} for clean removal
         
         this._button = null;
         this._activitiesButton = Main.panel.statusArea['activities'];
@@ -30,14 +32,35 @@ export class ShowAppsButton {
                 this._settings.connect('changed::showapps-enabled', () => this._sync()),
                 this._settings.connect('changed::showapps-position', () => this._sync()),
                 this._settings.connect('changed::showapps-custom-icon', () => this._updateIcon()),
-                // Note: We don't strictly need to listen to 'showapps-action' changes 
-                // if we check the value dynamically inside the click handler.
+                this._settings.connect('changed::showapps-action', () => this._updateState())
             );
+
+            // --- State Monitoring (Fixes visual feedback issue) ---
+            
+            // Helper to safely connect signals and store them for cleanup
+            const addSignal = (obj, signal, callback) => {
+                if (obj) {
+                    const id = obj.connect(signal, callback);
+                    this._overviewSignals.push({ obj, id });
+                }
+            };
+
+            // Monitor Overview transition states to update button appearance immediately
+            addSignal(Main.overview, 'showing', () => this._updateState());
+            addSignal(Main.overview, 'hiding', () => this._updateState());
+            addSignal(Main.overview, 'shown', () => this._updateState());
+            addSignal(Main.overview, 'hidden', () => this._updateState());
+
+            // Monitor Dash's internal button state
+            // This is crucial for distinguishing between "Window Picker" and "App Grid" modes
+            if (Main.overview.dash && Main.overview.dash.showAppsButton) {
+                addSignal(Main.overview.dash.showAppsButton, 'notify::checked', () => this._updateState());
+            }
 
             this._sync();
 
         } catch (e) {
-            logError("Failed to enable ShowAppsButton", e);
+            logError("Failed to enable AppButton", e);
         }
     }
 
@@ -56,6 +79,16 @@ export class ShowAppsButton {
             this._settingsSignals = [];
             this._settings = null;
         }
+
+        // Clean up external signals
+        this._overviewSignals.forEach(sig => {
+            try {
+                sig.obj.disconnect(sig.id);
+            } catch (e) {
+                // Ignore errors if object was already destroyed
+            }
+        });
+        this._overviewSignals = [];
     }
 
     _sync() {
@@ -103,9 +136,11 @@ export class ShowAppsButton {
         } else if (position === 2) {
             // Mode: Before
             if (this._activitiesButton) this._activitiesButton.show();
-            // Insert at the same index as Activities currently is, pushing Activities to index+1
             this._container.insert_child_at_index(this._button, actIndex);
         }
+
+        // Ensure state is correct after sync
+        this._updateState();
     }
 
     _createButton() {
@@ -132,25 +167,51 @@ export class ShowAppsButton {
 
             if (action === 1) {
                 // Show App Grid (Toggle behavior)
-                // If overview is visible AND app grid is active, we hide.
-                // We rely on the standard Dash's "Show Apps" button state to know if we are in Grid mode.
-                const isAppsOpen = Main.overview.visible && 
-                                   Main.overview.dash && 
-                                   Main.overview.dash.showAppsButton && 
-                                   Main.overview.dash.showAppsButton.checked;
-
-                if (isAppsOpen) {
+                // If Overview is already active (either Window Picker OR Grid), close it.
+                // This ensures the button always toggles the view off if it's open.
+                if (Main.overview.visible) {
                     Main.overview.hide();
                 } else {
+                    // If Grid is NOT open (Desktop), open Apps.
                     Main.overview.showApps();
                 }
             } else {
-                // Toggle Overview (Default behavior)
+                // Toggle Overview (Standard behavior)
                 Main.overview.toggle();
             }
             
             return Clutter.EVENT_STOP;
         });
+    }
+
+    // New method to handle visual feedback
+    _updateState() {
+        if (!this._button || !this._settings) return;
+
+        const action = this._settings.get_enum('showapps-action');
+        let isActive = false;
+
+        if (action === 1) {
+            // Mode: Show Apps
+            // Button is active ONLY if the Application Grid is actually visible
+            const dashButton = Main.overview.dash.showAppsButton;
+            isActive = dashButton && dashButton.checked;
+        } else {
+            // Mode: Toggle Overview
+            // Button is active if Overview is visible (either Window Picker OR Grid)
+            isActive = Main.overview.visible;
+        }
+
+        // Apply visual classes
+        if (isActive) {
+            this._button.add_style_class_name('active');
+            this._button.add_style_pseudo_class('active');
+            this._button.add_style_pseudo_class('checked');
+        } else {
+            this._button.remove_style_class_name('active');
+            this._button.remove_style_pseudo_class('active');
+            this._button.remove_style_pseudo_class('checked');
+        }
     }
 
     _updateIcon() {
