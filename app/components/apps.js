@@ -10,7 +10,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js'; 
 import * as DND from 'resource:///org/gnome/shell/ui/dnd.js';
 import { ExtensionComponent } from './base.js';
-import { logError } from '../util/logger.js'; 
+import { log, logError } from '../util/logger.js'; 
 
 /**
  * Base Button Class for Application Panel Items
@@ -137,9 +137,7 @@ class AppPanelButtonBase extends PanelMenu.Button {
             style: `
                 width: ${this.width}px;
                 height: 30px; 
-                margin: 0 4px;
                 background-color: rgba(255, 255, 255, 0.1);
-                border-radius: 4px;
             `,
             child: new St.Icon({
                 gicon: this.iconActor.gicon,
@@ -175,22 +173,29 @@ class AppPanelButtonBase extends PanelMenu.Button {
                 const children = this._container.get_children();
                 let targetIndex = 0;
 
+                const ACTIVATION_RATIO = 0.5;
+                let lastIndex = -1;
+
                 for (const child of children) {
                     if (child === this._placeholder || !child.visible) continue;
-                    if (child === this || (child.contains && child.contains(this))) continue;
 
-                    const [childX, childW] = child.get_transformed_position();
-                    const childCenter = childX + childW / 2;
+                    const [childX] = child.get_transformed_position();
+                    const childW = child.width;
 
-                    if (x < childCenter) break;
+                    // const triggerX = childX + childW / 2;
+                    const triggerX = childX + childW * ACTIVATION_RATIO;
+
+                    if (x < triggerX)
+                        break;
+
                     targetIndex++;
                 }
 
-                const currentIndex = children.indexOf(this._placeholder);
-                if (targetIndex !== currentIndex) {
+                if (targetIndex !== lastIndex) {
                     try {
                         this._container.set_child_at_index(this._placeholder, targetIndex);
-                    } catch(e) {}
+                    } catch (error) {}
+                    lastIndex = targetIndex;
                 }
 
                 return DND.DragMotionResult.CONTINUE;
@@ -305,41 +310,32 @@ class AppPanelButtonBase extends PanelMenu.Button {
     }
 
     vfunc_event(event) {
-        try {            
+        try {
             const type = event.type();
-    
             if (type === Clutter.EventType.BUTTON_PRESS) {
                 const button = event.get_button();
-                
-                // LEFT CLICK
                 if (button === 1) {
                     if (this._isDraggable) return Clutter.EVENT_PROPAGATE;
-                    if (this._clickCallback) {
-                        this._clickCallback();
-                        return Clutter.EVENT_STOP;
-                    }
+                    
+                    // Consume the press event to prevent default handling (e.g. menu toggle)
+                    // but DO NOT execute the callback here. Wait for RELEASE.
+                    return Clutter.EVENT_STOP;
                 }
-                
-                // RIGHT CLICK
                 if (button === 3) {
                     if (this._menuCallback) this._menuCallback(this.menu);
                     this.menu.toggle();
                     return Clutter.EVENT_STOP;
                 }
             }
-    
             if (type === Clutter.EventType.BUTTON_RELEASE) {
                 const button = event.get_button();
-                // Handle click only if dragging didn't occur
-                if (button === 1) {
-                    if (this._isDraggable && !this._dragged && this._clickCallback) {
-                        this._clickCallback();
-                        return Clutter.EVENT_STOP;
-                    }
+                if (button === 1 && !this._dragged && this._clickCallback) {
+                    this._clickCallback();
+                    return Clutter.EVENT_STOP;
                 }
             }
             return super.vfunc_event(event);
-        } catch (error) {
+        } catch(e) {
             return Clutter.EVENT_PROPAGATE;
         }
     }
