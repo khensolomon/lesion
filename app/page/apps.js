@@ -61,8 +61,8 @@ export function createAppsUI() {
         { name: 'Custom', id: 0 },
         { name: 'Dot Below',  pos: 'top',    off: 12, w: 4,  h: 4,  r: 99, c: '#ffffff' },
         { name: 'Dot Above',  pos: 'bottom', off: 12, w: 4,  h: 4,  r: 99, c: '#ffffff' },
-        { name: 'Line Below', pos: 'top',    off: 12, w: 16, h: 2,  r: 0,  c: '#3584e4' },
-        { name: 'Line Above', pos: 'bottom', off: 12, w: 16, h: 2,  r: 0,  c: '#3584e4' },
+        { name: 'Line Below', pos: 'top',    off: 14, w: 14, h: 1,  r: 0,  c: '#ffffff' },
+        { name: 'Line Above', pos: 'bottom', off: 14, w: 14, h: 1,  r: 0,  c: '#ffffff' },
         { name: 'Bar Left',   pos: 'right',  off: 13, w: 2,  h: 16, r: 0,  c: '#ffffff' },
         { name: 'Bar Right',  pos: 'left',   off: 13, w: 2,  h: 16, r: 0,  c: '#ffffff' }
     ];

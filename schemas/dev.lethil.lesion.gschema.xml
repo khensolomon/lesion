@@ -171,7 +171,7 @@
     -->
 
     <!-- Apps -->
-    <key name="apps-icon-size" type="i"><default>16</default></key>
+    <key name="apps-icon-size" type="i"><default>14</default></key>
     <key name="apps-icon-desaturate" type="b"><default>true</default></key>
     
     <!-- Opacity Customization -->
@@ -179,8 +179,8 @@
     <key name="apps-opacity-stopped" type="i"><default>160</default></key>
 
     <!-- Indicator Configuration -->
-    <key name="apps-indicator-pos" enum="dev.lethil.lesion.BoxPosition"><default>'bottom'</default></key> 
-    <key name="apps-indicator-offset" type="i"><default>2</default></key>
+    <key name="apps-indicator-pos" enum="dev.lethil.lesion.BoxPosition"><default>'top'</default></key> 
+    <key name="apps-indicator-offset" type="i"><default>12</default></key>
     <key name="apps-indicator-width" type="i"><default>4</default></key>
     <key name="apps-indicator-height" type="i"><default>4</default></key>
     <key name="apps-indicator-radius" type="i"><default>99</default></key>
@@ -205,7 +205,7 @@
       <default>'left'</default>
     </key>
     <key name="apps-running-index" type="i">
-      <default>1</default>
+      <default>0</default>
     </key>
 
     <!-- Disks -->
@@ -216,7 +216,7 @@
       <default>'right'</default>
     </key>
     <key name="apps-disks-index" type="i">
-      <default>0</default>
+      <default>1</default>
     </key>
 
     <!-- Trash -->
@@ -227,7 +227,7 @@
       <default>'right'</default>
     </key>
     <key name="apps-trash-index" type="i">
-      <default>1</default>
+      <default>2</default>
     </key>
 
     <!-- Dock -->

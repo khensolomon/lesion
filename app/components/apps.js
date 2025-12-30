@@ -10,7 +10,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js'; 
 import * as DND from 'resource:///org/gnome/shell/ui/dnd.js';
 import { ExtensionComponent } from './base.js';
-import { log, logError } from '../util/logger.js'; 
+import { logError } from '../util/logger.js'; 
 
 /**
  * Base Button Class for Application Panel Items
@@ -61,7 +61,8 @@ class AppPanelButtonBase extends PanelMenu.Button {
         this._desatEffect = new Clutter.DesaturateEffect({ factor: 0.0 });
         this.iconActor.add_effect(this._desatEffect);
 
-        // Cleanup on destruction
+        // Hover & Cleanup
+        this.connect('notify::hover', () => this._onHoverChanged());
         this.connect('destroy', () => this._onDestroy());
     }
 
@@ -75,6 +76,24 @@ class AppPanelButtonBase extends PanelMenu.Button {
             this._placeholder = null;
         }
         this._container = null;
+    }
+
+    _onHoverChanged() {
+        // Skip hover effects if dragging or if drag target
+        if (this._dragged) return;
+        
+        // POLISH: Subtle scale animation on hover
+        const scale = this.hover ? 1.15 : 1.0;
+        
+        // Don't animate if this button is currently a DND drop target (handled externally)
+        if (this.iconActor.opacity < 255 && !this.hover) return;
+
+        this.iconActor.ease({
+            scale_x: scale,
+            scale_y: scale,
+            duration: 200,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD
+        });
     }
 
     enableDragging(onDragEndCallback) {
@@ -178,23 +197,20 @@ class AppPanelButtonBase extends PanelMenu.Button {
 
                 for (const child of children) {
                     if (child === this._placeholder || !child.visible) continue;
+                    if (child === this || (child.contains && child.contains(this))) continue;
 
-                    const [childX] = child.get_transformed_position();
-                    const childW = child.width;
-
-                    // const triggerX = childX + childW / 2;
+                    const [childX, childW] = child.get_transformed_position();
                     const triggerX = childX + childW * ACTIVATION_RATIO;
 
-                    if (x < triggerX)
-                        break;
-
+                    if (x < triggerX) break;
                     targetIndex++;
                 }
 
-                if (targetIndex !== lastIndex) {
+                const currentIndex = children.indexOf(this._placeholder);
+                if (targetIndex !== currentIndex) {
                     try {
                         this._container.set_child_at_index(this._placeholder, targetIndex);
-                    } catch (error) {}
+                    } catch(e) {}
                     lastIndex = targetIndex;
                 }
 
@@ -206,7 +222,6 @@ class AppPanelButtonBase extends PanelMenu.Button {
     }
 
     _finishDrag(cancelled) {
-        // Kill drag actor immediately
         if (this._draggable && this._draggable._dragActor) {
             this._draggable._dragActor.destroy();
         }
@@ -218,7 +233,6 @@ class AppPanelButtonBase extends PanelMenu.Button {
             this._dragMonitor = null;
         }
 
-        // Swap visual placeholder with real item
         if (this._placeholder && this._container) {
             const destIndex = this._container.get_children().indexOf(this._placeholder);
             if (destIndex !== -1) {
@@ -230,22 +244,21 @@ class AppPanelButtonBase extends PanelMenu.Button {
                 }
                 this._container.set_child_at_index(actorToMove, destIndex);
             }
-            
             this._placeholder.destroy();
             this._placeholder = null;
         }
 
         this.visible = true;
         this.opacity = 255;
+        this.iconActor.scale_x = 1.0;
+        this.iconActor.scale_y = 1.0;
 
-        // Trigger save callback in manager
         if (this._onDragEnd && this._container) {
             GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
                 if (this._onDragEnd) this._onDragEnd();
                 return GLib.SOURCE_REMOVE;
             });
         }
-
         this._container = null;
     }
 
@@ -263,28 +276,11 @@ class AppPanelButtonBase extends PanelMenu.Button {
             if (!this.iconActor) return;
             this._dot.translation_x = 0;
             this._dot.translation_y = 0;
-            
             switch(posEnum) {
-                case 0: // Top
-                    this._dot.x_align = Clutter.ActorAlign.CENTER;
-                    this._dot.y_align = Clutter.ActorAlign.START;
-                    this._dot.translation_y = offset; 
-                    break;
-                case 1: // Right
-                    this._dot.x_align = Clutter.ActorAlign.END;
-                    this._dot.y_align = Clutter.ActorAlign.CENTER;
-                    this._dot.translation_x = -offset; 
-                    break;
-                case 2: // Bottom
-                    this._dot.x_align = Clutter.ActorAlign.CENTER;
-                    this._dot.y_align = Clutter.ActorAlign.END;
-                    this._dot.translation_y = -offset;
-                    break;
-                case 3: // Left
-                    this._dot.x_align = Clutter.ActorAlign.START;
-                    this._dot.y_align = Clutter.ActorAlign.CENTER;
-                    this._dot.translation_x = offset;
-                    break;
+                case 0: this._dot.x_align = Clutter.ActorAlign.CENTER; this._dot.y_align = Clutter.ActorAlign.START; this._dot.translation_y = offset; break;
+                case 1: this._dot.x_align = Clutter.ActorAlign.END; this._dot.y_align = Clutter.ActorAlign.CENTER; this._dot.translation_x = -offset; break;
+                case 2: this._dot.x_align = Clutter.ActorAlign.CENTER; this._dot.y_align = Clutter.ActorAlign.END; this._dot.translation_y = -offset; break;
+                case 3: this._dot.x_align = Clutter.ActorAlign.START; this._dot.y_align = Clutter.ActorAlign.CENTER; this._dot.translation_x = offset; break;
             }
         } catch(e) {}
     }
@@ -309,6 +305,33 @@ class AppPanelButtonBase extends PanelMenu.Button {
         } catch(e) {}
     }
 
+    _getWindows() {
+        if (this._app) return this._app.get_windows();
+        return this._windows || [];
+    }
+
+    // UX: Cycle windows on scroll
+    vfunc_scroll_event(event) {
+        const windows = this._getWindows();
+        if (windows.length > 1) {
+            const direction = event.get_scroll_direction();
+            const focusWin = global.display.focus_window;
+            let idx = windows.indexOf(focusWin);
+            
+            if (idx === -1) idx = 0;
+            
+            if (direction === Clutter.ScrollDirection.UP) {
+                idx = (idx - 1 + windows.length) % windows.length;
+            } else if (direction === Clutter.ScrollDirection.DOWN) {
+                idx = (idx + 1) % windows.length;
+            }
+            
+            windows[idx].activate(global.get_current_time());
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
+    }
+
     vfunc_event(event) {
         try {
             const type = event.type();
@@ -316,10 +339,22 @@ class AppPanelButtonBase extends PanelMenu.Button {
                 const button = event.get_button();
                 if (button === 1) {
                     if (this._isDraggable) return Clutter.EVENT_PROPAGATE;
-                    
-                    // Consume the press event to prevent default handling (e.g. menu toggle)
-                    // but DO NOT execute the callback here. Wait for RELEASE.
                     return Clutter.EVENT_STOP;
+                }
+                // UX: Middle click (2) -> New Window
+                if (button === 2) {
+                    if (this._app) {
+                         this._app.open_new_window(-1);
+                         return Clutter.EVENT_STOP;
+                    }
+                    if (this.accessible_name === 'Trash') {
+                         Gio.AppInfo.launch_default_for_uri('trash:///', null);
+                         return Clutter.EVENT_STOP;
+                    }
+                    if (this._clickCallback) {
+                        this._clickCallback(true); 
+                        return Clutter.EVENT_STOP;
+                    }
                 }
                 if (button === 3) {
                     if (this._menuCallback) this._menuCallback(this.menu);
@@ -361,7 +396,6 @@ export class AppsManager extends ExtensionComponent {
         this._volumeMonitor = Gio.VolumeMonitor.get();
         this._windowSignals = new Map();
 
-        // Pre-fetch trash name once
         try {
             const file = Gio.File.new_for_uri('trash:///');
             const info = file.query_info('standard::display-name', Gio.FileQueryInfoFlags.NONE, null);
@@ -371,8 +405,10 @@ export class AppsManager extends ExtensionComponent {
         const updateAll = () => this._updateState();
         const visualUpdate = () => this._updateVisuals();
 
-        this.observe('changed::apps-icon-size', updateAll);
-        this.observe('changed::apps-icon-desaturate', updateAll);
+        const rebuild = () => this._rebuildAll();
+        this.observe('changed::apps-icon-size', rebuild);
+        this.observe('changed::apps-icon-desaturate', rebuild);
+        
         this.observe('changed::apps-opacity-running', visualUpdate);
         this.observe('changed::apps-opacity-stopped', visualUpdate);
         
@@ -525,13 +561,13 @@ export class AppsManager extends ExtensionComponent {
         this._syncDisks();
         this._syncFavorites();
         this._refreshHandledWindowsMap(); 
-        this._syncRunning(true);
+        this._syncRunning();
         this._updateVisuals();
     }
 
     _updateState() {
         this._refreshHandledWindowsMap();
-        this._syncRunning(false); 
+        this._syncRunning(); 
         this._updateVisuals();
     }
 
@@ -540,9 +576,6 @@ export class AppsManager extends ExtensionComponent {
 
         const running = this._appSystem.get_running();
         
-        // Use a broad search for any running app that might hold the windows
-        // This avoids issues where the app ID detection is too strict
-
         if (this._items.trash && this.getSettings().get_boolean('apps-trash-enabled')) {
             let trashWindows = [];
             const trashNameLower = (this._trashName || 'Trash').toLowerCase();
@@ -654,13 +687,13 @@ export class AppsManager extends ExtensionComponent {
 
         if (this._items.trash) {
             const running = this._items.trash._windows && this._items.trash._windows.length > 0;
-            const focused = (activeCustomBtn === this._items.trash);
+            const focused = activeCustomBtn === this._items.trash;
             apply(this._items.trash, running, focused);
         }
 
         this._items.disks.forEach(btn => {
             const running = btn._windows && btn._windows.length > 0;
-            const focused = (activeCustomBtn === btn);
+            const focused = activeCustomBtn === btn;
             apply(btn, running, focused);
         });
         
@@ -668,7 +701,7 @@ export class AppsManager extends ExtensionComponent {
         this._items.favorites.forEach(btn => {
             if (btn._app) {
                 const running = btn._app.state === Shell.AppState.RUNNING;
-                let focused = (focusApp === btn._app);
+                let focused = focusApp === btn._app;
                 if (focused && activeCustomBtn && this._isFileManager(btn._app)) focused = false;
                 apply(btn, running, focused);
             }
@@ -676,7 +709,7 @@ export class AppsManager extends ExtensionComponent {
 
         this._items.running.forEach(btn => {
             if (btn._app) {
-                const focused = (focusApp === btn._app);
+                const focused = focusApp === btn._app;
                 apply(btn, true, focused);
             }
         });
