@@ -18,3 +18,14 @@ Added
 - Open the file in the default editor.
 - Remove the file from the management list.
 - Centralizing Configuration & logs
+
+[1-32] - 2025-12-31
+
+Improve
+
+- apps
+- corners code
+
+Remove
+
+- ShowApps

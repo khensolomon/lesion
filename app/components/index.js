@@ -1,6 +1,6 @@
 // Panel Widgets
 import { Indicator } from '../panel/indicator.js';
-import { AppButton } from '../panel/appbutton.js';
+// import { AppButton } from '../panel/appbutton.js';
 
 // Logic Modules (Moved from app/ext to app/components)
 import { WallpaperManager } from './wallpaper.js';
@@ -19,7 +19,7 @@ import { AppsManager } from './apps.js';
 export function getComponents() {
     return [
         Indicator,
-        AppButton,
+        // AppButton,
         
         WallpaperManager,
         StyleManager,

@@ -1,15 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="dev-lethil-lesion">
 
-  <!-- ShowApps's Enums -->
-  <enum id="dev.lethil.lesion.ShowAppsPosition">
-    <value nick="replace" value="0"/>
-    <value nick="after" value="1"/>
-    <value nick="before" value="2"/>
-  </enum>
-  <enum id="dev.lethil.lesion.ShowAppsAction">
-    <value nick="overview" value="0"/>
-    <value nick="apps" value="1"/>
+  <!-- Common: Show Apps Button Mode-->
+  <enum id="dev.lethil.lesion.ButtonMode">
+    <value nick="icon" value="0"/>
+    <value nick="file" value="1"/>
+    <value nick="text" value="2"/>
   </enum>
 
   <!-- Clock's Enums -->
@@ -77,30 +73,6 @@
     <key name="indicator-custom-icon" type="s">
       <default>''</default>
       <summary>Custom icon path for the main indicator</summary>
-    </key>
-
-    <!-- Show Apps -->
-    <key name="showapps-action" enum="dev.lethil.lesion.ShowAppsAction">
-      <default>'apps'</default>
-      <summary>What the button does</summary>
-    </key>
-
-    <key name="showapps-enabled" type="b">
-      <default>false</default>
-      <summary>Enable the Show Applications button in top panel</summary>
-      <description>Completely disable this feature if turned off</description>
-    </key>
-
-    <key name="showapps-position" enum="dev.lethil.lesion.ShowAppsPosition">
-      <default>'replace'</default>
-      <summary>Where to place the Show Apps button</summary>
-      <description>replace = hide Activities text, after = insert button after it, before = insert button before it</description>
-    </key>
-
-    <key name="showapps-custom-icon" type="s">
-      <default>''</default>
-      <summary>Custom icon file path</summary>
-      <description>Full path to SVG/PNG/JPG. Empty string = use default view-app-grid-symbolic</description>
     </key>
 
     <!-- Corners -->
@@ -229,6 +201,23 @@
     <key name="apps-trash-index" type="i">
       <default>2</default>
     </key>
+    
+    <!-- Show Grid Button -->
+    <key name="apps-showgrid-enabled" type="b"><default>false</default></key>
+    <key name="apps-showgrid-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
+    <key name="apps-showgrid-index" type="i"><default>0</default></key>
+    
+    <!-- NEW: Expanded Show Grid Options -->
+    <key name="apps-showgrid-mode" enum="dev.lethil.lesion.ButtonMode"><default>'icon'</default></key>
+    <key name="apps-showgrid-icon" type="s"><default>'start-here-symbolic'</default></key>
+    <key name="apps-showgrid-path" type="s"><default>''</default></key>
+    <key name="apps-showgrid-text" type="s"><default>'Apps'</default></key>
+
+    <!-- Overview Button -->
+    <key name="apps-overview-enabled" type="b"><default>false</default></key>
+    <key name="apps-overview-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
+    <key name="apps-overview-index" type="i"><default>0</default></key>
+    <key name="apps-overview-hide-default" type="b"><default>false</default></key>
 
     <!-- Dock -->
     <key name="dock-enabled" type="b">

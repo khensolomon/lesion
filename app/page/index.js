@@ -2,7 +2,7 @@ import { createHomeUI } from "./home.js";
 import { createAboutUI } from "./about.js";
 import { createCssUI } from "./css.js";
 import { createWallpaperUI } from "./wallpaper.js";
-import { createAppButtonUI } from './appbutton.js';
+// import { createAppButtonUI } from './appbutton.js';
 import { createCornersUI } from './corners.js';
 import { createGeometryUI } from './geometry.js';
 import { createClockUI } from './clock.js';
@@ -101,14 +101,14 @@ export function getPages() {
     {
       title: "Panel",
       items: [
-        {
-          id: "appbutton",
-          title: "Start",
-          icon: "start-here-symbolic",
-          description: "Show or hide the Show Apps button on the panel",
-          keywords: ["applications", "menu", "grid", "overview", "launcher"],
-          ui: createAppButtonUI,
-        },
+        // {
+        //   id: "appbutton",
+        //   title: "Start",
+        //   icon: "start-here-symbolic",
+        //   description: "Show or hide the Show Apps button on the panel",
+        //   keywords: ["applications", "menu", "grid", "overview", "launcher"],
+        //   ui: createAppButtonUI,
+        // },
         {
           id: "clock",
           title: "Clock",
@@ -125,7 +125,7 @@ export function getPages() {
         // },
         {
             id: 'apps',
-            title: 'Apps',
+            title: 'Applications',
             icon: 'open-menu-symbolic',
             keywords: ['applications', 'grid', 'overview', 'launcher', 'menu'],
             ui: createAppsUI

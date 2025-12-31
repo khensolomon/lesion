@@ -16,7 +16,7 @@ import { logError } from '../util/logger.js';
  * Base Button Class for Application Panel Items
  */
 class AppPanelButtonBase extends PanelMenu.Button {
-    _init(icon, name, clickCallback, menuCallback) {
+    _init(iconOrActor, name, clickCallback, menuCallback) {
         super._init(0.0, name);
         
         this.style = 'min-width: 0px; margin: 0 2px; padding: 0 4px;'; 
@@ -28,11 +28,15 @@ class AppPanelButtonBase extends PanelMenu.Button {
         });
         this.add_child(this._box);
 
-        this.iconActor = icon; 
+        this.iconActor = iconOrActor; 
+        
+        // Ensure the actor is aligned center if it's an Icon or Label
         this.iconActor.x_align = Clutter.ActorAlign.CENTER;
         this.iconActor.y_align = Clutter.ActorAlign.CENTER;
+        
+        // Pivot point is useful for icon animations, might not apply to Label, but harmless
         this.iconActor.set_pivot_point(0.5, 0.5);
-        this._box.add_child(icon);
+        this._box.add_child(this.iconActor);
 
         this._dot = new St.Widget({
             visible: true, 
@@ -40,6 +44,16 @@ class AppPanelButtonBase extends PanelMenu.Button {
         });
         this._dot.set_pivot_point(0.5, 0.5);
         this._box.add_child(this._dot);
+
+        // Secondary Label (e.g., Workspace Indicator)
+        this._label = new St.Label({
+            style_class: 'app-panel-label',
+            visible: false,
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.END,
+            style: 'font-size: 9px; font-weight: 800; color: white; background-color: rgba(0,0,0,0.6); border-radius: 99px; padding: 1px 4px; margin-bottom: 2px; margin-right: 2px;'
+        });
+        this._box.add_child(this._label);
 
         this.set_accessible_name(name);
 
@@ -57,9 +71,11 @@ class AppPanelButtonBase extends PanelMenu.Button {
         this._dragMonitor = null;
         this._container = null;
         
-        // Effects
-        this._desatEffect = new Clutter.DesaturateEffect({ factor: 0.0 });
-        this.iconActor.add_effect(this._desatEffect);
+        // Effects (Only add if it's an icon-like actor)
+        if (this.iconActor instanceof St.Icon) {
+            this._desatEffect = new Clutter.DesaturateEffect({ factor: 0.0 });
+            this.iconActor.add_effect(this._desatEffect);
+        }
 
         // Hover & Cleanup
         this.connect('notify::hover', () => this._onHoverChanged());
@@ -80,15 +96,19 @@ class AppPanelButtonBase extends PanelMenu.Button {
 
     _onHoverChanged() {
         if (this._dragged) return;
-        const scale = this.hover ? 1.15 : 1.0;
-        if (this.iconActor.opacity < 255 && !this.hover) return;
+        
+        // Only animate scaling if it is an Icon
+        if (this.iconActor instanceof St.Icon) {
+            const scale = this.hover ? 1.1 : 1.0;
+            if (this.iconActor.opacity < 255 && !this.hover) return;
 
-        this.iconActor.ease({
-            scale_x: scale,
-            scale_y: scale,
-            duration: 200,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD
-        });
+            this.iconActor.ease({
+                scale_x: scale,
+                scale_y: scale,
+                duration: 200,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD
+            });
+        }
     }
 
     enableDragging(onDragEndCallback) {
@@ -124,6 +144,16 @@ class AppPanelButtonBase extends PanelMenu.Button {
     }
 
     getDragActor() {
+        // Handle dragging for Text vs Icon
+        if (this.iconActor instanceof St.Label) {
+             const clone = new St.Label({
+                 text: this.iconActor.text,
+                 style_class: this.iconActor.style_class,
+                 opacity: 220
+             });
+             return clone;
+        }
+
         const clone = new St.Icon({
             gicon: this.iconActor.gicon,
             icon_size: this.iconActor.icon_size || 24,
@@ -139,6 +169,24 @@ class AppPanelButtonBase extends PanelMenu.Button {
 
     _createPlaceholder() {
         if (!this._container) return;
+        
+        let childActor;
+        if (this.iconActor instanceof St.Label) {
+             childActor = new St.Label({
+                 text: this.iconActor.text,
+                 style: 'opacity: 0.5'
+             });
+        } else {
+             childActor = new St.Icon({
+                gicon: this.iconActor.gicon,
+                icon_size: (this.iconActor.icon_size || 20), 
+                opacity: 100,
+                x_align: Clutter.ActorAlign.CENTER,
+                y_align: Clutter.ActorAlign.CENTER
+            });
+            const effect = new Clutter.DesaturateEffect({ factor: 1.0 });
+            childActor.add_effect(effect);
+        }
 
         this._placeholder = new St.Bin({
             style_class: 'app-panel-placeholder',
@@ -147,18 +195,9 @@ class AppPanelButtonBase extends PanelMenu.Button {
                 height: 30px; 
                 background-color: rgba(255, 255, 255, 0.1);
             `,
-            child: new St.Icon({
-                gicon: this.iconActor.gicon,
-                icon_size: (this.iconActor.icon_size || 20), 
-                opacity: 100,
-                x_align: Clutter.ActorAlign.CENTER,
-                y_align: Clutter.ActorAlign.CENTER
-            })
+            child: childActor
         });
         
-        const effect = new Clutter.DesaturateEffect({ factor: 1.0 });
-        this._placeholder.child.add_effect(effect);
-
         let insertBefore = this;
         if (this.get_parent() !== this._container) {
             let p = this.get_parent();
@@ -296,6 +335,12 @@ class AppPanelButtonBase extends PanelMenu.Button {
         } catch(e) {}
     }
 
+    setSecondaryLabel(text, visible) {
+        if (!this._label) return;
+        this._label.text = text || '';
+        this._label.visible = visible;
+    }
+
     _getWindows() {
         if (this._app) return this._app.get_windows();
         return this._windows || [];
@@ -376,7 +421,7 @@ const AppPanelButton = GObject.registerClass(
 export class AppsManager extends ExtensionComponent {
     
     onEnable() {
-        this._items = { favorites: [], running: [], disks: [], trash: null };
+        this._items = { favorites: [], running: [], disks: [], trash: null, showgrid: null, overview: null };
         this._handledWindows = new Set();
         this._trashName = 'Trash'; 
         
@@ -406,6 +451,7 @@ export class AppsManager extends ExtensionComponent {
             this.observe(`changed::apps-indicator-${k}`, visualUpdate);
         });
 
+        // Watch Standard Groups
         ['favorites', 'running', 'disks', 'trash'].forEach(g => {
             const rebuild = () => {
                 this._rebuildAll();
@@ -413,6 +459,21 @@ export class AppsManager extends ExtensionComponent {
             this.observe(`changed::apps-${g}-enabled`, rebuild);
             this.observe(`changed::apps-${g}-pos`, rebuild);
             this.observe(`changed::apps-${g}-index`, rebuild);
+        });
+        
+        // Watch Show Grid / Overview Specifics
+        ['showgrid', 'overview'].forEach(g => {
+            this.observe(`changed::apps-${g}-enabled`, rebuild);
+            this.observe(`changed::apps-${g}-pos`, rebuild);
+            this.observe(`changed::apps-${g}-index`, rebuild);
+            if (g === 'showgrid') {
+                 // Watch all new keys
+                 this.observe('changed::apps-showgrid-mode', rebuild);
+                 this.observe('changed::apps-showgrid-icon', rebuild);
+                 this.observe('changed::apps-showgrid-path', rebuild);
+                 this.observe('changed::apps-showgrid-text', rebuild);
+            }
+            if (g === 'overview') this.observe(`changed::apps-${g}-hide-default`, rebuild);
         });
 
         const shellSettings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
@@ -462,6 +523,7 @@ export class AppsManager extends ExtensionComponent {
             id: this._volumeMonitor.connect('mount-removed', () => this._rebuildAll())
         });
 
+        // Trash Monitor
         try {
             const trashFile = Gio.File.new_for_uri('trash:///');
             this._trashMonitor = trashFile.monitor_directory(Gio.FileMonitorFlags.NONE, null);
@@ -478,6 +540,33 @@ export class AppsManager extends ExtensionComponent {
             console.warn('Lesion: Failed to monitor trash', e);
         }
 
+        // Overview & Workspace Signals
+        this._signals.push({
+            obj: Main.overview,
+            id: Main.overview.connect('showing', () => this._updateVisuals())
+        });
+        this._signals.push({
+            obj: Main.overview,
+            id: Main.overview.connect('hiding', () => this._updateVisuals())
+        });
+        // Connect to dash item (App Grid Button) state changes if possible, or just poll in visual update
+        // We can hook into 'hidden'/'shown' for cleaner transitions
+        this._signals.push({
+            obj: Main.overview,
+            id: Main.overview.connect('shown', () => this._updateVisuals())
+        });
+         this._signals.push({
+            obj: Main.overview,
+            id: Main.overview.connect('hidden', () => this._updateVisuals())
+        });
+
+        if (global.workspace_manager) {
+            this._signals.push({
+                obj: global.workspace_manager,
+                id: global.workspace_manager.connect('active-workspace-changed', () => this._updateVisuals())
+            });
+        }
+
         global.display.list_all_windows().forEach(win => this._trackWindow(win));
 
         this._rebuildAll();
@@ -485,6 +574,11 @@ export class AppsManager extends ExtensionComponent {
 
     onDisable() {
         this._clearAll();
+        // Restore Default Activities if hidden
+        if (Main.panel.statusArea.activities) {
+            Main.panel.statusArea.activities.container.show();
+        }
+
         if (this._windowSignals) {
             for (const [win, ids] of this._windowSignals) {
                 ids.forEach(id => { try { win.disconnect(id); } catch(e){} });
@@ -531,11 +625,14 @@ export class AppsManager extends ExtensionComponent {
         this._clearGroup('favorites');
         this._clearGroup('running');
         this._clearGroup('disks');
-        if (this._items.trash) {
-            if (this._items.trash._role) delete Main.panel.statusArea[this._items.trash._role];
-            try { this._items.trash.destroy(); } catch(e) {}
-            this._items.trash = null;
-        }
+        
+        ['trash', 'showgrid', 'overview'].forEach(k => {
+            if (this._items[k]) {
+                if (this._items[k]._role) delete Main.panel.statusArea[this._items[k]._role];
+                try { this._items[k].destroy(); } catch(e) {}
+                this._items[k] = null;
+            }
+        });
     }
 
     _clearGroup(group) {
@@ -549,6 +646,8 @@ export class AppsManager extends ExtensionComponent {
     _rebuildAll() {
         this._syncTrash();
         this._syncDisks();
+        this._syncShowGrid();
+        this._syncOverview();
         this._syncFavorites();
         this._refreshHandledWindowsMap(); 
         this._syncRunning(true);
@@ -622,6 +721,9 @@ export class AppsManager extends ExtensionComponent {
 
     _applyEffects(icon) {
         if (!icon) return icon;
+        // Don't apply desaturate to St.Label
+        if (icon instanceof St.Label) return icon;
+
         const desaturate = this.getSettings().get_boolean('apps-icon-desaturate');
         if (desaturate) {
             const effect = new Clutter.DesaturateEffect({ factor: 1.0 });
@@ -703,6 +805,30 @@ export class AppsManager extends ExtensionComponent {
                 apply(btn, true, focused);
             }
         });
+
+        // --- NEW BUTTONS VISUALS ---
+
+        const overviewVisible = Main.overview.visible;
+        // Logic: Grid is 'open' if overview is visible AND app grid is selected (checked)
+        // This is a proxy detection for standard GNOME Shell
+        const isGridOpen = overviewVisible && Main.overview.dash.showAppsButton.checked;
+        const isOverviewOpen = overviewVisible && !isGridOpen;
+
+        if (this._items.showgrid) {
+             apply(this._items.showgrid, isGridOpen, isGridOpen);
+        }
+
+        if (this._items.overview) {
+             apply(this._items.overview, isOverviewOpen, isOverviewOpen);
+             
+             // Update Workspace Indicator for Overview Button
+             if (isOverviewOpen && global.workspace_manager) {
+                 const activeIndex = global.workspace_manager.get_active_workspace_index() + 1;
+                 this._items.overview.setSecondaryLabel(`${activeIndex}`, true);
+             } else {
+                 this._items.overview.setSecondaryLabel('', false);
+             }
+        }
     }
 
     _appendAction(menu, label, callback, destructive = false) {
@@ -836,6 +962,8 @@ export class AppsManager extends ExtensionComponent {
         }
     }
 
+    // --- BUTTON SYNC METHODS ---
+
     _syncTrash() {
         if (this._items.trash) {
             if (this._items.trash._role) delete Main.panel.statusArea[this._items.trash._role];
@@ -891,7 +1019,6 @@ export class AppsManager extends ExtensionComponent {
                     this._appendAction(menu, 'Open', () => Gio.AppInfo.launch_default_for_uri('trash:///', null));
                 }
 
-                // Check if trash has content before showing Empty option
                 let hasTrash = false;
                 try {
                     const file = Gio.File.new_for_uri('trash:///');
@@ -973,6 +1100,139 @@ export class AppsManager extends ExtensionComponent {
             Main.panel.addToStatusArea(role, btn, idx + i, pos);
             this._items.disks.push(btn);
         });
+    }
+
+    _syncShowGrid() {
+        // Cleanup old
+        if (this._items.showgrid) {
+            if (this._items.showgrid._role) delete Main.panel.statusArea[this._items.showgrid._role];
+            try { this._items.showgrid.destroy(); } catch(e) {}
+            this._items.showgrid = null;
+        }
+
+        if (!this.getSettings().get_boolean('apps-showgrid-enabled')) return;
+
+        const pos = this._getPos('showgrid');
+        const idx = this._getIndex('showgrid');
+        const size = this.getSettings().get_int('apps-icon-size');
+        
+        // Mode: 0=icon, 1=file, 2=text
+        const mode = this.getSettings().get_enum('apps-showgrid-mode'); 
+        
+        let actor = null;
+
+        if (mode === 2) {
+            // Text Mode
+            const text = this.getSettings().get_string('apps-showgrid-text') || 'Apps';
+            actor = new St.Label({
+                 text: text,
+                 y_align: Clutter.ActorAlign.CENTER,
+                 style_class: 'panel-button-text' // Uses GNOME's default or our own
+            });
+        } else {
+            // Icon or File Mode
+            let gicon = null;
+            if (mode === 1) {
+                // File Path
+                const path = this.getSettings().get_string('apps-showgrid-path');
+                if (path) {
+                    try {
+                         gicon = Gio.FileIcon.new(Gio.File.new_for_path(path));
+                    } catch(e) {
+                         console.warn('Lesion: Failed to load icon file', e);
+                    }
+                }
+            } else {
+                // Icon Name
+                const iconName = this.getSettings().get_string('apps-showgrid-icon') || 'start-here-symbolic';
+                gicon = new Gio.ThemedIcon({ name: iconName });
+            }
+
+            // Fallback
+            if (!gicon) {
+                 gicon = new Gio.ThemedIcon({ name: 'start-here-symbolic' });
+            }
+
+            actor = new St.Icon({ gicon: gicon, icon_size: size, style_class: 'system-status-icon' });
+            this._applyEffects(actor);
+        }
+
+        const btn = new AppPanelButton(
+            actor, 'Applications',
+            () => {
+                if (Main.overview.visible && Main.overview.dash.showAppsButton.checked) {
+                    Main.overview.hide();
+                } else {
+                    Main.overview.show();
+                    // Force switch to app grid
+                    Main.overview.dash.showAppsButton.checked = true;
+                }
+            },
+            (menu) => {
+                menu.removeAll();
+                this._appendAction(menu, 'Toggle Grid', () => Main.overview.dash.showAppsButton.clicked());
+            }
+        );
+
+        const role = 'lesion-showgrid';
+        btn._role = role;
+        Main.panel.addToStatusArea(role, btn, idx, pos);
+        this._items.showgrid = btn;
+    }
+
+    _syncOverview() {
+        if (this._items.overview) {
+            if (this._items.overview._role) delete Main.panel.statusArea[this._items.overview._role];
+            try { this._items.overview.destroy(); } catch(e) {}
+            this._items.overview = null;
+        }
+
+        // Hide Default Activities if requested
+        const hideDefault = this.getSettings().get_boolean('apps-overview-hide-default');
+        if (Main.panel.statusArea.activities) {
+            if (hideDefault) Main.panel.statusArea.activities.container.hide();
+            else Main.panel.statusArea.activities.container.show();
+        }
+
+        if (!this.getSettings().get_boolean('apps-overview-enabled')) return;
+
+        const pos = this._getPos('overview');
+        const idx = this._getIndex('overview');
+        const size = this.getSettings().get_int('apps-icon-size');
+
+        // Use 'activities' icon logic or just a specific symbolic
+        const gicon = new Gio.ThemedIcon({ name: 'view-paged-symbolic' }); // Good metaphor for overview
+        const icon = new St.Icon({ gicon: gicon, icon_size: size, style_class: 'system-status-icon' });
+        this._applyEffects(icon);
+
+        const btn = new AppPanelButton(
+            icon, 'Overview',
+            () => {
+                 // Toggle overview, but ensure we aren't in grid mode if showing
+                 if (Main.overview.visible && !Main.overview.dash.showAppsButton.checked) {
+                     Main.overview.hide();
+                 } else {
+                     Main.overview.show();
+                     Main.overview.dash.showAppsButton.checked = false; // Switch to window picker
+                 }
+            },
+            (menu) => {
+                menu.removeAll();
+                if (global.workspace_manager) {
+                    const n = global.workspace_manager.get_n_workspaces();
+                    for(let i=0; i<n; i++) {
+                        this._appendAction(menu, `Switch to Workspace ${i+1}`, () => {
+                             global.workspace_manager.get_workspace_by_index(i).activate(global.get_current_time());
+                        });
+                    }
+                }
+            }
+        );
+
+        const role = 'lesion-overview';
+        btn._role = role;
+        Main.panel.addToStatusArea(role, btn, idx, pos);
+        this._items.overview = btn;
     }
 
     _syncFavorites() {

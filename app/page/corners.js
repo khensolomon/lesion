@@ -3,6 +3,10 @@ import Gtk from 'gi://Gtk';
 import Gio from 'gi://Gio';
 import { AppConfig } from '../config.js';
 
+/**
+ * Creates the "Window Corners" preferences page.
+ * * @returns {Adw.PreferencesPage} The constructed preferences page.
+ */
 export function createCornersUI() {
     const page = new Adw.PreferencesPage();
     const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
@@ -42,7 +46,6 @@ export function createCornersUI() {
     configGroup.add(flatRow);
 
     // 2. Radius Slider (SpinRow)
-    // We bind its sensitivity: It should be disabled if "Flatten" is ON or "Enabled" is OFF
     const radiusRow = new Adw.SpinRow({
         title: 'Corner Radius',
         subtitle: 'Pixel value (0 - 50)',
@@ -56,7 +59,10 @@ export function createCornersUI() {
 
     settings.bind('corners-radius', radiusRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     
-    // Manual sensitivity logic for Radius (complex dependency)
+    /**
+     * Updates the sensitivity of the radius row based on other settings.
+     * The slider should be disabled if corners are disabled OR if "Flatten" is enabled.
+     */
     const updateRadiusState = () => {
         const enabled = settings.get_boolean('corners-enabled');
         const isFlat = settings.get_boolean('corners-flat');
@@ -65,7 +71,9 @@ export function createCornersUI() {
 
     settings.connect('changed::corners-enabled', updateRadiusState);
     settings.connect('changed::corners-flat', updateRadiusState);
-    updateRadiusState(); // Initial check
+    
+    // Initial check to set correct state on load
+    updateRadiusState(); 
 
     configGroup.add(radiusRow);
 

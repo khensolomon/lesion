@@ -5,18 +5,45 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { AppConfig } from '../config.js';
 
+/**
+ * Creates the Applications Preferences Page UI.
+ * This page handles configuration for:
+ * - Global appearance (Icon size, opacity, saturation)
+ * - Running Indicators (Style, position, color)
+ * - Specific App Groups (Show Apps, Overview, Favorites, Running, Disks, Trash)
+ * * @returns {Adw.PreferencesPage} The constructed preferences page.
+ */
 export function createAppsUI() {
     const page = new Adw.PreferencesPage();
     const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
 
-    // --- GLOBAL APPEARANCE ---
+    /**
+     * Helper to attach an icon to the group header.
+     * @param {Adw.PreferencesGroup} group - The preference group to modify.
+     * @param {string} iconName - The name of the icon to display.
+     */
+    const addGroupIcon = (group, iconName) => {
+        if (!iconName) return;
+        const icon = new Gtk.Image({
+            icon_name: iconName,
+            pixel_size: 24,
+        });
+        icon.add_css_class('dim-label');
+        group.set_header_suffix(icon);
+    };
+
+    /**
+     * SECTION: Global Appearance
+     * Configures the general look and feel of panel buttons.
+     */
     const globalGroup = new Adw.PreferencesGroup({
         title: 'Global Appearance',
-        description: 'Settings applying to all items below'
+        description: 'Configure the look and feel of your panel buttons.'
     });
+    addGroupIcon(globalGroup, 'preferences-desktop-appearance-symbolic');
     page.add(globalGroup);
 
-    // Icon Size
+    /** Setting: Icon Size */
     const sizeRow = new Adw.SpinRow({
         title: 'Icon Size',
         adjustment: new Gtk.Adjustment({ lower: 12, upper: 64, step_increment: 2 }),
@@ -25,14 +52,14 @@ export function createAppsUI() {
     settings.bind('apps-icon-size', sizeRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     globalGroup.add(sizeRow);
 
-    // Desaturate
+    /** Setting: Desaturation (Monochrome) */
     const desatRow = new Adw.SwitchRow({
         title: 'Monochrome Icons',
     });
     settings.bind('apps-icon-desaturate', desatRow, 'active', Gio.SettingsBindFlags.DEFAULT);
     globalGroup.add(desatRow);
 
-    // Opacity
+    /** Setting: Running Opacity */
     const opRunRow = new Adw.SpinRow({
         title: 'Running Opacity',
         subtitle: 'Opacity for running apps (0-255)',
@@ -42,6 +69,7 @@ export function createAppsUI() {
     settings.bind('apps-opacity-running', opRunRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     globalGroup.add(opRunRow);
 
+    /** Setting: Stopped/Inactive Opacity */
     const opStopRow = new Adw.SpinRow({
         title: 'Stopped Opacity',
         subtitle: 'Opacity for inactive favorites (0-255)',
@@ -52,11 +80,21 @@ export function createAppsUI() {
     globalGroup.add(opStopRow);
 
 
-    // --- INDICATOR SETTINGS ---
-    const indGroup = new Adw.PreferencesGroup({ title: 'Running Indicator' });
+    /**
+     * SECTION: Indicator Settings
+     * Customize the visual indicator for running applications.
+     */
+    const indGroup = new Adw.PreferencesGroup({ 
+        title: 'Running Indicator',
+        description: 'Customize the visual indicator for running applications.'
+    });
+    addGroupIcon(indGroup, 'software-update-available-symbolic');
     page.add(indGroup);
 
-    // PRESETS CONFIGURATION
+    /**
+     * Configuration for Indicator Presets.
+     * Maps user-friendly names to specific indicator properties.
+     */
     const presetConfig = [
         { name: 'Custom', id: 0 },
         { name: 'Dot Below',  pos: 'top',    off: 12, w: 4,  h: 4,  r: 99, c: '#ffffff' },
@@ -76,7 +114,10 @@ export function createAppsUI() {
         model: presetModel,
     });
 
-    // 1. APPLY PRESET
+    /**
+     * Logic: Apply Preset
+     * When a preset is selected (other than Custom), write values to settings.
+     */
     presetRow.connect('notify::selected', () => {
         const idx = presetRow.selected;
         if (idx === 0) return; // Custom, do nothing
@@ -92,7 +133,11 @@ export function createAppsUI() {
         settings.set_string('apps-indicator-color', p.c);
     });
 
-    // 2. DETECT PRESET (Reverse Lookup)
+    /**
+     * Logic: Detect Preset (Reverse Lookup)
+     * Reads current settings and attempts to match them to a known preset.
+     * Updates the combo row selection to match.
+     */
     const updatePresetSelection = () => {
         // Read current values
         let pos = 'top';
@@ -148,9 +193,12 @@ export function createAppsUI() {
 
     indGroup.add(presetRow);
 
-    // --- MANUAL CONTROLS ---
+    /**
+     * SUB-SECTION: Manual Controls
+     * Fine-grained controls for indicator properties.
+     */
 
-    // Position Enum (Manual Handling)
+    /** Setting: Position Enum (Manual Handling) */
     const indPosModel = new Gtk.StringList();
     indPosModel.append('Top');    // 0
     indPosModel.append('Right');  // 1
@@ -183,7 +231,7 @@ export function createAppsUI() {
 
     indGroup.add(indPosRow);
 
-    // Offset
+    /** Setting: Offset */
     const offsetRow = new Adw.SpinRow({
         title: 'Offset',
         subtitle: 'Distance from edge',
@@ -192,7 +240,7 @@ export function createAppsUI() {
     settings.bind('apps-indicator-offset', offsetRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     indGroup.add(offsetRow);
 
-    // Width
+    /** Setting: Width */
     const wRow = new Adw.SpinRow({
         title: 'Width',
         adjustment: new Gtk.Adjustment({ lower: 1, upper: 20, step_increment: 1 })
@@ -200,7 +248,7 @@ export function createAppsUI() {
     settings.bind('apps-indicator-width', wRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     indGroup.add(wRow);
 
-    // Height
+    /** Setting: Height */
     const hRow = new Adw.SpinRow({
         title: 'Height',
         adjustment: new Gtk.Adjustment({ lower: 1, upper: 20, step_increment: 1 })
@@ -208,7 +256,7 @@ export function createAppsUI() {
     settings.bind('apps-indicator-height', hRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     indGroup.add(hRow);
 
-    // Radius
+    /** Setting: Radius */
     const radRow = new Adw.SpinRow({
         title: 'Radius',
         subtitle: 'Corner rounding (0=Square, 99=Round)',
@@ -217,7 +265,7 @@ export function createAppsUI() {
     settings.bind('apps-indicator-radius', radRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     indGroup.add(radRow);
 
-    // Color
+    /** Setting: Color */
     const colorRow = new Adw.ActionRow({ title: 'Color' });
     const colorDialog = new Gtk.ColorDialog();
     const colorBtn = new Gtk.ColorDialogButton({
@@ -249,9 +297,20 @@ export function createAppsUI() {
     indGroup.add(colorRow);
 
 
-    // --- CATEGORY SECTIONS ---
-    const createSection = (title, keySuffix) => {
-        const group = new Adw.PreferencesGroup({ title: title });
+    /**
+     * Helper to create a standardized settings section.
+     * @param {string} title - The visible title of the section.
+     * @param {string} keySuffix - The suffix for settings keys (e.g., 'showgrid').
+     * @param {string} description - The description of the section.
+     * @param {string} iconName - The icon name for the section header.
+     * @param {Function} [extraWidgetsCallback] - Optional callback to add extra widgets to the group.
+     */
+    const createSection = (title, keySuffix, description, iconName, extraWidgetsCallback = null) => {
+        const group = new Adw.PreferencesGroup({ 
+            title: title,
+            description: description 
+        });
+        addGroupIcon(group, iconName);
         page.add(group);
 
         const enableRow = new Adw.SwitchRow({ title: `Show ${title}` });
@@ -286,24 +345,174 @@ export function createAppsUI() {
         idxRow.connect('notify::value', () => settings.set_int(`apps-${keySuffix}-index`, idxRow.value));
         group.add(idxRow);
 
+        if (extraWidgetsCallback) {
+            extraWidgetsCallback(group);
+        }
+
         settings.bind(`apps-${keySuffix}-enabled`, posRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
         settings.bind(`apps-${keySuffix}-enabled`, idxRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
     };
 
-    createSection('Favorites', 'favorites');
-    createSection('Running Apps', 'running');
-    createSection('Disks', 'disks');
-    createSection('Trash', 'trash');
+    /** SECTION: Show Applications Button */
+    createSection(
+        'Show Applications', 
+        'showgrid', 
+        'Settings for the application grid toggle button.',
+        'view-app-grid-symbolic',
+        (group) => {
+            // Mode Selection: Icon | File | Text
+            const modeModel = new Gtk.StringList();
+            modeModel.append('Icon Name'); // 0
+            modeModel.append('File Path'); // 1
+            modeModel.append('Text Label'); // 2
 
-    // --- FAVORITES REORDERING ---
+            const modeRow = new Adw.ComboRow({
+                title: 'Display Mode',
+                subtitle: 'Choose how the button appears in the panel.',
+                model: modeModel,
+                selected: settings.get_enum('apps-showgrid-mode')
+            });
+            
+            modeRow.connect('notify::selected', () => {
+                const vals = ['icon', 'file', 'text'];
+                settings.set_enum('apps-showgrid-mode', idxToEnum(modeRow.selected));
+                updateVisibility(modeRow.selected);
+            });
+            group.add(modeRow);
+
+            const idxToEnum = (idx) => idx; // 0, 1, 2 map directly
+
+            // 1. Icon Name Entry
+            // FIX: Display fallback default if empty
+            const currentIcon = settings.get_string('apps-showgrid-icon');
+            const iconRow = new Adw.EntryRow({
+                title: 'Icon Name',
+                text: currentIcon || 'start-here-symbolic'
+            });
+            iconRow.connect('changed', () => settings.set_string('apps-showgrid-icon', iconRow.text));
+            group.add(iconRow);
+
+            // 2. File Path Entry + Button
+            const fileRow = new Adw.ActionRow({
+                title: 'Icon File',
+                subtitle: settings.get_string('apps-showgrid-path') || 'No file selected'
+            });
+            
+            const fileBtn = new Gtk.Button({
+                icon_name: 'folder-open-symbolic',
+                valign: Gtk.Align.CENTER
+            });
+            
+            fileBtn.connect('clicked', () => {
+                // Use FileDialog for modern GTK4
+                try {
+                    const dialog = new Gtk.FileDialog({
+                        title: 'Select Icon',
+                        modal: true
+                    });
+                    
+                    // Add filters if desired
+                    const filters = new Gio.ListStore({ item_type: Gtk.FileFilter });
+                    const imageFilter = new Gtk.FileFilter();
+                    imageFilter.set_name("Images");
+                    imageFilter.add_mime_type("image/*");
+                    filters.append(imageFilter);
+                    dialog.set_filters(filters);
+
+                    const win = fileBtn.get_root(); // Getting the window
+                    dialog.open(win, null, (source, result) => {
+                        try {
+                            const file = source.open_finish(result);
+                            const path = file.get_path();
+                            if (path) {
+                                settings.set_string('apps-showgrid-path', path);
+                                fileRow.set_subtitle(path);
+                            }
+                        } catch (e) {
+                            // User likely cancelled
+                        }
+                    });
+                } catch (err) {
+                    console.error("FileDialog not supported or failed", err);
+                }
+            });
+
+            fileRow.add_suffix(fileBtn);
+            group.add(fileRow);
+
+            // 3. Text Entry
+            const textRow = new Adw.EntryRow({
+                title: 'Label Text',
+                text: settings.get_string('apps-showgrid-text')
+            });
+            textRow.connect('changed', () => settings.set_string('apps-showgrid-text', textRow.text));
+            group.add(textRow);
+
+            // Helper text
+            const helpRow = new Adw.ActionRow({
+                title: 'Note',
+                subtitle: 'Enter a themed icon name (e.g., start-here-symbolic) or a full file path.'
+            });
+            group.add(helpRow);
+
+            // Visibility Logic
+            const updateVisibility = (modeIdx) => {
+                iconRow.set_visible(modeIdx === 0);
+                fileRow.set_visible(modeIdx === 1);
+                textRow.set_visible(modeIdx === 2);
+                helpRow.set_visible(modeIdx !== 2);
+            };
+
+            // Initial State
+            updateVisibility(settings.get_enum('apps-showgrid-mode'));
+        }
+    );
+
+    /** SECTION: Overview Button */
+    createSection(
+        'Overview', 
+        'overview', 
+        'Settings for the activities overview button.',
+        'view-paged-symbolic',
+        (group) => {
+            const hideDefaultRow = new Adw.SwitchRow({
+                title: 'Hide "Activities" Button',
+                subtitle: 'Hide the default GNOME Shell Activities button'
+            });
+            settings.bind('apps-overview-hide-default', hideDefaultRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+            group.add(hideDefaultRow);
+        }
+    );
+
+    /** SECTION: Favorites (Pinned Apps) */
+    createSection('Favorites', 'favorites', 'Manage the pinned favorites launcher.', 'starred-symbolic');
+
+    /** SECTION: Running Apps Taskbar */
+    createSection('Running Apps', 'running', 'Manage the taskbar for running applications.', 'preferences-system-windows-symbolic');
+
+    /** SECTION: Disks & Volumes */
+    createSection('Disks', 'disks', 'Manage mounted drives and volumes.', 'drive-harddisk-symbolic');
+
+    /** SECTION: Trash */
+    createSection('Trash', 'trash', 'Manage the trash bin button.', 'user-trash-symbolic');
+
+    /** * SECTION: Manage Favorites
+     * Interface for reordering pinned applications.
+     */
     const favGroup = new Adw.PreferencesGroup({
         title: 'Manage Favorites',
-        description: 'Reorder your pinned apps'
+        description: 'Reorder your pinned apps in the favorites list.'
     });
+    addGroupIcon(favGroup, 'view-sort-ascending-symbolic');
     page.add(favGroup);
 
     const shellSettings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
     
+    /**
+     * Logic: Refresh Favorites List
+     * Rebuilds the UI rows based on the current favorites list in GSettings.
+     * @param {string[]} [manualList] - Optional manual list to use instead of fetching from settings.
+     */
     const refreshFavs = (manualList = null) => {
         let child = favGroup.get_first_child();
         while(child) {

@@ -4,10 +4,22 @@ import St from 'gi://St';
 import { log, logError } from '../util/logger.js';
 import { ExtensionComponent } from './base.js';
 
+/**
+ * Manages the application of custom corner radii to GNOME Shell and GTK applications.
+ * Handles the generation of CSS and safe injection into user config files.
+ * @extends ExtensionComponent
+ */
 export class CornersManager extends ExtensionComponent {
     
+    /**
+     * Called when the extension component is enabled.
+     * Initializes configuration paths and sets up settings listeners.
+     */
     onEnable() {
+        /** @type {Gio.File|null} Reference to the generated shell CSS file */
         this._cssFile = null;
+        
+        /** @type {string} Name of the generated CSS file */
         this._generatedFile = 'dynamic-corners.css';
         
         // Marker tags to safely edit user files without deleting other configs
@@ -23,13 +35,21 @@ export class CornersManager extends ExtensionComponent {
         this.observe('changed::corners-flat', () => this._sync());
     }
 
+    /**
+     * Called when the extension component is disabled.
+     * Reverts all changes to Shell and GTK configurations.
+     */
     onDisable() {
-        // Clean up everything when disabled
         this._unloadShellStyles();
         this._cleanupShellFile();
         this._cleanGtkConfig(); 
     }
 
+    /**
+     * Synchronizes the current settings with the applied styles.
+     * Decides whether to apply styles or clean them up based on the 'corners-enabled' key.
+     * @private
+     */
     _sync() {
         const settings = this.getSettings();
         const enabled = settings.get_boolean('corners-enabled');
@@ -50,7 +70,12 @@ export class CornersManager extends ExtensionComponent {
         this._syncGtk(radius);
     }
 
-    // --- GNOME SHELL STYLING ---
+    /**
+     * Generates and loads the CSS for GNOME Shell elements.
+     * @param {number} radius - The border radius in pixels.
+     * @param {boolean} isFlat - Whether to force flat corners on specific elements like panels.
+     * @private
+     */
     _syncShell(radius, isFlat) {
         this._unloadShellStyles();
 
@@ -69,6 +94,8 @@ export class CornersManager extends ExtensionComponent {
         try {
             const path = GLib.build_filenamev([this._extension.path, 'style', this._generatedFile]);
             const file = Gio.File.new_for_path(path);
+            
+            // Replace contents asynchronously or synchronously - keeping sync for simplicity in settings callback
             file.replace_contents(cssContent, null, false, Gio.FileCreateFlags.NONE, null);
 
             const themeContext = St.ThemeContext.get_for_stage(global.stage);
@@ -81,6 +108,10 @@ export class CornersManager extends ExtensionComponent {
         }
     }
 
+    /**
+     * Unloads the previously loaded stylesheet from the GNOME Shell theme.
+     * @private
+     */
     _unloadShellStyles() {
         if (this._cssFile) {
             const themeContext = St.ThemeContext.get_for_stage(global.stage);
@@ -91,6 +122,10 @@ export class CornersManager extends ExtensionComponent {
         }
     }
 
+    /**
+     * Deletes the temporary CSS file generated for GNOME Shell.
+     * @private
+     */
     _cleanupShellFile() {
         try {
             const path = GLib.build_filenamev([this._extension.path, 'style', this._generatedFile]);
@@ -99,7 +134,11 @@ export class CornersManager extends ExtensionComponent {
         } catch(e) {}
     }
 
-    // --- APPLICATION STYLING (Safe CSS Injection) ---
+    /**
+     * Prepares the CSS content for GTK applications and injects it into user config.
+     * @param {number} radius - The border radius in pixels.
+     * @private
+     */
     _syncGtk(radius) {
         // Stronger selectors to override system themes
         const gtkCss = `
@@ -132,12 +171,23 @@ ${this.BLOCK_END}
         this._writeUserGtkConfig('gtk-3.0', gtkCss);
     }
 
+    /**
+     * Removes the extension's CSS blocks from GTK configurations.
+     * @private
+     */
     _cleanGtkConfig() {
         // Write empty string to remove our block
         this._writeUserGtkConfig('gtk-4.0', ''); 
         this._writeUserGtkConfig('gtk-3.0', ''); 
     }
 
+    /**
+     * Writes (or cleans) specific CSS blocks in the user's GTK configuration file.
+     * Performs a check to avoid writing to disk if the content hasn't changed.
+     * * @param {string} gtkVersionDir - The GTK directory name (e.g., 'gtk-3.0', 'gtk-4.0').
+     * @param {string} newContent - The CSS content to insert (or empty string to remove).
+     * @private
+     */
     _writeUserGtkConfig(gtkVersionDir, newContent) {
         try {
             const configDir = GLib.get_user_config_dir();
@@ -145,21 +195,31 @@ ${this.BLOCK_END}
             const file = Gio.File.new_for_path(gtkPath);
 
             let content = '';
+            let originalContent = '';
             
             // Read existing file if it exists
             if (file.query_exists(null)) {
                 const [success, raw] = file.load_contents(null);
-                if (success) content = new TextDecoder().decode(raw);
+                if (success) {
+                    originalContent = new TextDecoder().decode(raw);
+                    content = originalContent;
+                }
             }
 
             // Regex to remove ONLY our previous block, keeping user's other configs safe
             const regex = new RegExp(`${this._escapeRegExp(this.BLOCK_START)}[\\s\\S]*?${this._escapeRegExp(this.BLOCK_END)}\\n?`, 'g');
             content = content.replace(regex, '');
 
-            // Append new content
+            // Append new content if provided
             if (newContent) {
                 if (content.length > 0 && !content.endsWith('\n')) content += '\n';
                 content += newContent;
+            }
+
+            // OPTIMIZATION: If the content hasn't changed, do nothing.
+            // This prevents "doing something" when disabled if the file is already clean.
+            if (content === originalContent) {
+                return;
             }
 
             // Ensure directory exists
@@ -174,6 +234,12 @@ ${this.BLOCK_END}
         }
     }
 
+    /**
+     * Escapes special characters for use in a Regular Expression.
+     * @param {string} string - The string to escape.
+     * @returns {string} The escaped string.
+     * @private
+     */
     _escapeRegExp(string) {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
