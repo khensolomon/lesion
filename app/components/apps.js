@@ -886,12 +886,26 @@ export class AppsManager extends ExtensionComponent {
                 menu.removeAll();
                 const wins = btn._windows || [];
                 if (wins.length > 0) {
-                    this._appendAction(menu, 'Close Trash', () => wins.forEach(w => w.delete(global.get_current_time())));
+                    this._appendAction(menu, 'Quit', () => wins.forEach(w => w.delete(global.get_current_time())));
                 } else {
-                    this._appendAction(menu, 'Open Trash', () => Gio.AppInfo.launch_default_for_uri('trash:///', null));
+                    this._appendAction(menu, 'Open', () => Gio.AppInfo.launch_default_for_uri('trash:///', null));
                 }
-                this._appendSeparator(menu);
-                this._appendAction(menu, 'Empty Trash', () => this._confirmEmptyTrash(), true);
+
+                // Check if trash has content before showing Empty option
+                let hasTrash = false;
+                try {
+                    const file = Gio.File.new_for_uri('trash:///');
+                    const enumerator = file.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+                    if (enumerator.next_file(null) !== null) {
+                        hasTrash = true;
+                    }
+                    enumerator.close(null);
+                } catch (e) {}
+
+                if (hasTrash) {
+                    this._appendSeparator(menu);
+                    this._appendAction(menu, 'Empty Trash', () => this._confirmEmptyTrash(), true);
+                }
             }
         );
         
