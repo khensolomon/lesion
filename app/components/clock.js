@@ -6,22 +6,34 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { ExtensionComponent } from './base.js';
 import { log, logError } from '../util/logger.js';
 
+/**
+ * Manages the Clock component in the GNOME Shell panel.
+ * Handles moving the clock, formatting the time/date, and custom styling.
+ * @extends ExtensionComponent
+ */
 export class ClockManager extends ExtensionComponent {
 
+    /**
+     * Called when the extension component is enabled.
+     * Initializes the custom clock widget and hooks into system signals.
+     */
     onEnable() {
         log("ClockManager enabled");
 
+        /** @type {Main.DateMenu.DateMenuButton} */
         this._dateMenu = Main.panel.statusArea.dateMenu;
         this._centerBox = Main.panel._centerBox;
         this._rightBox = Main.panel._rightBox;
         this._leftBox = Main.panel._leftBox;
 
+        // Determine which menu acts as the system/aggregate menu
         this._systemMenu = Main.panel.statusArea.quickSettings || Main.panel.statusArea.aggregateMenu;
         this._activities = Main.panel.statusArea.activities;
 
+        /** @type {St.Label} */
         this._originalClockDisplay = this._dateMenu._clockDisplay;
 
-        // --- custom box ---
+        // --- Custom Clock Container ---
         this._customBox = new St.BoxLayout({
             vertical: true,
             style_class: 'panel-button',
@@ -31,7 +43,7 @@ export class ClockManager extends ExtensionComponent {
             can_focus: true
         });
 
-
+        // Time Label
         this._timeLabel = new St.Label({
             style_class: 'clock-label',
             y_align: Clutter.ActorAlign.CENTER,
@@ -40,6 +52,7 @@ export class ClockManager extends ExtensionComponent {
             style: 'min-width: 20px; min-height: 7px; font-size: 90%; line-height:0.7em; spacing:0px;'
         });
 
+        // Date Label (used for multiline or specific formats)
         this._dateLabel = new St.Label({
             style_class: 'clock-label',
             y_align: Clutter.ActorAlign.CENTER,
@@ -51,36 +64,22 @@ export class ClockManager extends ExtensionComponent {
         this._customBox.add_child(this._timeLabel);
         this._customBox.add_child(this._dateLabel);
 
+        // Insert custom box into the panel hierarchy
         this._clockParent = this._originalClockDisplay.get_parent();
         this._clockParent.insert_child_above(this._customBox, this._originalClockDisplay);
 
         this._originalParent = this._dateMenu.container.get_parent();
 
-        // hover/click highlight
+        // Setup Hover Effects
         this._customBox.connect('enter-event', () => this._customBox.add_style_pseudo_class('hover'));
         this._customBox.connect('leave-event', () => this._customBox.remove_style_pseudo_class('hover'));
-        // this._customBox.connect('button-press-event', () => this._customBox.add_style_pseudo_class('active'));
-        // this._customBox.connect('button-release-event', () => {
-        //     this._customBox.remove_style_pseudo_class('active');
-        //     // this._dateMenu.menu.toggle();
-        //     // Run the toggle in the next idle cycle to allow the style update to apply first
-        //     GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-        //         this._dateMenu.menu.toggle();
-        //         return GLib.SOURCE_REMOVE; // run once
-        //     });
-        // });
 
-        // 1. Visual feedback on press
-        // this._customBox.connect('button-press-event', () => {
-        //     this._customBox.add_style_pseudo_class('active');
-        // });
-
-        // 2. Handle release and toggle
+        // Handle Click/Release to toggle the menu
         this._customBox.connect('button-release-event', () => {
             this._dateMenu.menu.toggle();
         });
 
-        // 3. Sync 'active' state with the menu actually being open/closed
+        // Sync 'active' state with the menu visibility
         this._dateMenu.menu.connect('open-state-changed', (menu, isOpen) => {
             if (isOpen) {
                 this._customBox.add_style_pseudo_class('active');
@@ -89,16 +88,25 @@ export class ClockManager extends ExtensionComponent {
             }
         });
 
+        // Watch for text changes in the original clock to update our custom label
         this._clockSignal = this._originalClockDisplay.connect('notify::text', () => {
             GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-                try { this._updateClockText(); } catch (e) { logError(e); }
+                try {
+                    this._updateClockText();
+                } catch (e) {
+                    logError(e);
+                }
                 return GLib.SOURCE_REMOVE;
             });
         });
 
-        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => { this._sync(); return GLib.SOURCE_REMOVE; });
+        // Initial Sync
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._sync();
+            return GLib.SOURCE_REMOVE;
+        });
 
-        // settings observers
+        // Register Settings Observers
         this.observe('changed::clock-move-enabled', () => this._syncPos());
         this.observe('changed::clock-position', () => this._syncPos());
         this.observe('changed::clock-target', () => this._syncPos());
@@ -108,44 +116,96 @@ export class ClockManager extends ExtensionComponent {
         this.observe('changed::clock-dim-separator', () => this._updateClockText());
     }
 
-    onDisable() { this._restore(); }
+    /**
+     * Called when the component is disabled.
+     * Restores the original clock and cleans up.
+     */
+    onDisable() {
+        this._restore();
+    }
 
-    _sync() { this._syncPos(); this._updateClockText(); }
+    /**
+     * Synchronizes both position and text content.
+     * @private
+     */
+    _sync() {
+        this._syncPos();
+        this._updateClockText();
+    }
 
+    /**
+     * Moves the clock to the configured position (Left/Right panel) or restores it.
+     * @private
+     */
     _syncPos() {
         if (!this._dateMenu) return;
         const settings = this.getSettings();
-        if (!settings.get_boolean('clock-move-enabled')) { this._restorePos(); return; }
+        if (!settings.get_boolean('clock-move-enabled')) {
+            this._restorePos();
+            return;
+        }
 
-        const target = settings.get_enum('clock-target');
-        const position = settings.get_enum('clock-position');
-        if (target === 0) this._move(this._leftBox, this._activities, position);
-        else this._move(this._rightBox, this._systemMenu, position);
+        const target = settings.get_enum('clock-target'); // 0: Left, 1: Right
+        const position = settings.get_enum('clock-position'); // 0: Before, 1: After
+
+        if (target === 0) {
+            this._move(this._leftBox, this._activities, position);
+        } else {
+            this._move(this._rightBox, this._systemMenu, position);
+        }
     }
 
+    /**
+     * Helper to move the DateMenu container to a specific target box.
+     * @param {St.BoxLayout} targetBox - The panel box (left or right) to move into.
+     * @param {Object} anchorObj - The status area object to anchor relative to.
+     * @param {number} positionMode - 0 for before anchor, 1 for after.
+     * @private
+     */
     _move(targetBox, anchorObj, positionMode) {
         if (!this._dateMenu || !targetBox) return;
         const container = this._dateMenu.container;
-        const parent = container.get_parent(); if (parent) parent.remove_child(container);
+        const parent = container.get_parent();
+
+        if (parent) parent.remove_child(container);
+
         const children = targetBox.get_children();
         const anchorContainer = anchorObj ? anchorObj.container : null;
         let anchorIndex = anchorContainer ? children.indexOf(anchorContainer) : -1;
-        if (anchorIndex === -1) anchorIndex = targetBox === this._leftBox ? 0 : children.length;
+
+        // Fallback if anchor is missing: Start of left box, or End of right box
+        if (anchorIndex === -1) {
+            anchorIndex = targetBox === this._leftBox ? 0 : children.length;
+        }
+
         const targetIndex = positionMode === 0 ? anchorIndex : anchorIndex + 1;
         targetBox.insert_child_at_index(container, targetIndex);
     }
 
+    /**
+     * Restores the clock to its default position in the center box.
+     * @private
+     */
     _restorePos() {
         if (!this._dateMenu || !this._centerBox) return;
         const container = this._dateMenu.container;
         const parent = container.get_parent();
+        
+        // If already in center box, do nothing (assumes index 0 is correct for restoration)
         if (parent === this._centerBox) return;
+        
         if (parent) parent.remove_child(container);
         this._centerBox.insert_child_at_index(container, 0);
     }
 
+    /**
+     * Updates the text of the custom clock labels based on settings.
+     * Handles formatting (strftime), multiline splitting, and dimming separators.
+     * @private
+     */
     _updateClockText() {
         if (!this._customBox || !this._originalClockDisplay) return;
+        
         const settings = this.getSettings();
         const mode = settings.get_enum('clock-format-mode');
         const multiline = settings.get_boolean('clock-multiline');
@@ -153,11 +213,21 @@ export class ClockManager extends ExtensionComponent {
 
         let text = '';
         if (mode === 1) {
+            // Custom Format Mode
             const format = settings.get_string('clock-custom-format') || '%H:%M\n%A, %d %B';
             const now = GLib.DateTime.new_now_local();
-            try { text = now.format(format); } catch(e) { logError(e); text = this._originalClockDisplay.text || ' '; }
-        } else { text = this._originalClockDisplay.text || ' '; }
+            try {
+                text = now.format(format);
+            } catch (e) {
+                logError(e);
+                text = this._originalClockDisplay.text || ' ';
+            }
+        } else {
+            // System Default Mode
+            text = this._originalClockDisplay.text || ' ';
+        }
 
+        // Hide original, show custom
         this._originalClockDisplay.visible = false;
         this._customBox.visible = true;
 
@@ -165,25 +235,18 @@ export class ClockManager extends ExtensionComponent {
             this._customBox.vertical = true;
             this._dateLabel.opacity = 255;
 
-            // const timeRegex = /([0-9]{1,2}[:∶][0-9]{2}(?:\s?[AP]M)?)/;
-            // const parts = text.split(timeRegex);
-            // if (parts.length >= 2) {
-            //     this._timeLabel.text = parts[1].trim();
-            //     this._dateLabel.text = ((parts[0] + ' ' + (parts[2] || '')).trim().replace(/\s{2,}/g,' ')) || ' ';
-            // } else {
-            //     const split = text.split(' ');
-            //     this._timeLabel.text = split[0] || ' ';
-            //     this._dateLabel.text = split.slice(1).join(' ') || ' ';
-            // }
+            // Regex to find time pattern like HH:MM or H:MM, optionally with seconds or AM/PM
             const timeRegex = /([0-9]{1,2}[:∶][0-9]{2}(?:[:∶][0-9]{2})?(?:\s?[AP]M)?)/;
             
             const parts = text.split(timeRegex);
             
             if (parts.length >= 2) {
+                // parts[1] is the time. parts[0] is prefix, parts[2] is suffix.
                 this._timeLabel.text = parts[1].trim();
-                // Reconstruct the date from the parts before (parts[0]) and after (parts[2]) the time
+                // Combine prefix and suffix for the date line
                 this._dateLabel.text = ((parts[0] + ' ' + (parts[2] || '')).trim().replace(/\s{2,}/g,' ')) || ' ';
             } else {
+                // Fallback split by space if regex fails
                 const split = text.split(' ');
                 this._timeLabel.text = split[0] || ' ';
                 this._dateLabel.text = split.slice(1).join(' ') || ' ';
@@ -191,22 +254,57 @@ export class ClockManager extends ExtensionComponent {
 
         } else {
             this._customBox.vertical = false;
-            this._dateLabel.opacity = 0; this._dateLabel.text = ' ';
+            this._dateLabel.opacity = 0;
+            this._dateLabel.text = ' ';
+
             if (dimSep) {
+                // Dim separators like ':', '-', '|', etc.
                 this._timeLabel.clutter_text.set_use_markup(true);
-                let safe = GLib.markup_escape_text(text,-1).replace(/([|•\-\u2013\u2014])/g,"<span foreground='#888888'>$1</span>");
-                if(!safe.trim()) safe='&nbsp;';
-                GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE,()=>{ try { this._timeLabel.clutter_text.set_markup(safe); } catch(e){ logError(e); this._timeLabel.clutter_text.set_use_markup(false); this._timeLabel.text=text||' '; } return GLib.SOURCE_REMOVE; });
+                let safe = GLib.markup_escape_text(text, -1).replace(/([|•\-\u2013\u2014:∶])/g, "<span foreground='#888888'>$1</span>");
+                if (!safe.trim()) safe = '&nbsp;';
+                
+                // Idle add to ensure markup applies correctly
+                GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                    try {
+                        this._timeLabel.clutter_text.set_markup(safe);
+                    } catch (e) {
+                        logError(e);
+                        this._timeLabel.clutter_text.set_use_markup(false);
+                        this._timeLabel.text = text || ' ';
+                    }
+                    return GLib.SOURCE_REMOVE;
+                });
             } else {
                 this._timeLabel.clutter_text.set_use_markup(false);
-                this._timeLabel.text=text;
+                this._timeLabel.text = text;
             }
         }
     }
 
+    /**
+     * Restores the environment to its original state.
+     * @private
+     */
     _restore() {
         this._restorePos();
-        if(this._originalClockDisplay){ if(this._clockSignal){ this._originalClockDisplay.disconnect(this._clockSignal); this._clockSignal=null; } this._originalClockDisplay.visible=true; }
-        if(this._customBox){ try{ this._customBox.destroy(); } catch(e){ logError(e); } this._customBox=null; this._timeLabel=null; this._dateLabel=null; }
+        
+        if (this._originalClockDisplay) {
+            if (this._clockSignal) {
+                this._originalClockDisplay.disconnect(this._clockSignal);
+                this._clockSignal = null;
+            }
+            this._originalClockDisplay.visible = true;
+        }
+
+        if (this._customBox) {
+            try {
+                this._customBox.destroy();
+            } catch (e) {
+                logError(e);
+            }
+            this._customBox = null;
+            this._timeLabel = null;
+            this._dateLabel = null;
+        }
     }
 }

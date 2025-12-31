@@ -3,7 +3,86 @@ import Gtk from "gi://Gtk";
 import Gio from "gi://Gio";
 import { AppConfig } from "../config.js";
 
+/**
+ * Creates the Clock Settings UI page.
+ * @returns {Adw.PreferencesPage} The constructed preferences page.
+ */
 export function createClockUI() {
+  /**
+   * Creates an expandable list row for the formatting guide.
+   * @param {string} title - The title of the row.
+   * @param {Gtk.Widget[]} children - Array of widgets to display in the expanded content.
+   * @returns {Gtk.ListBoxRow} The constructed list box row.
+   */
+  const createExpandableSection = (title, children) => {
+    const row = new Gtk.ListBoxRow();
+    // Disable selection so the background doesn't stay highlighted
+    row.set_selectable(false);
+
+    const box = new Gtk.Box({
+      orientation: Gtk.Orientation.VERTICAL,
+      margin_top: 12,
+      margin_bottom: 12,
+      margin_start: 15,
+      margin_end: 15,
+    });
+    row.set_child(box);
+
+    const header = new Gtk.Box({ spacing: 6, hexpand: true });
+    const label = new Gtk.Label({
+      label: title,
+      xalign: 0,
+      hexpand: true,
+      css_classes: ["title-5"],
+    });
+    const arrow = new Gtk.Image({ icon_name: "pan-down-symbolic" });
+
+    header.append(label);
+    header.append(arrow);
+
+    const revealer = new Gtk.Revealer({
+      transition_type: Gtk.RevealerTransitionType.SLIDE_DOWN,
+    });
+
+    const content = new Gtk.Box({
+      orientation: Gtk.Orientation.VERTICAL,
+      spacing: 4,
+      margin_top: 12,
+      margin_start: 12,
+    });
+    children.forEach((w) => content.append(w));
+    revealer.set_child(content);
+
+    // Expose a toggle method on the row for the click handler
+    row._toggle = () => {
+      const expanded = !revealer.reveal_child;
+      revealer.reveal_child = expanded;
+      arrow.icon_name = expanded ? "pan-up-symbolic" : "pan-down-symbolic";
+    };
+
+    box.append(header);
+    box.append(revealer);
+
+    return row;
+  };
+
+  /**
+   * Creates a simple label row for the formatting examples.
+   * @param {string} text - The example text to display.
+   * @returns {Gtk.Box} A box containing the label.
+   */
+  const createGuideEntry = (text) => {
+    const box = new Gtk.Box({ spacing: 12 });
+    box.append(
+      new Gtk.Label({
+        label: text,
+        xalign: 0,
+        hexpand: true,
+      })
+    );
+    return box;
+  };
+
   const page = new Adw.PreferencesPage();
   const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
 
@@ -106,7 +185,7 @@ export function createClockUI() {
   );
   formatGroup.add(formatEntryRow);
 
-  // Presets (flat, same level as Format String)
+  // Presets
   const presets = [
     // Originals
     { name: "Single: Standard", value: "%H:%M %a %d %b" },
@@ -117,7 +196,7 @@ export function createClockUI() {
     { name: "Double: EU Compact", value: "%H:%M %d.%m.%y" },
     { name: "Double: EU Full", value: "%H:%M:%S %a %d.%m.%Y" },
 
-    // New single-line presets
+    // Single-line
     { name: "Single: Compact", value: "%H:%M %a %d" },
     { name: "Single: With Seconds", value: "%H:%M:%S %a %d %b" },
     { name: "Single: With Year", value: "%H:%M %a %d %b %Y" },
@@ -125,7 +204,7 @@ export function createClockUI() {
     { name: "Single: 12-Hour Full", value: "%I:%M %p %A, %B %d" },
     { name: "Single: Date First", value: "%a %d %b %H:%M" },
 
-    // New double-line presets
+    // Double-line
     { name: "Double: With Seconds", value: "%H:%M:%S%n%A, %B %d" },
     { name: "Double: With Year", value: "%H:%M%n%A, %B %d, %Y" },
     { name: "Double: Big Month", value: "%B %d%n%H:%M" },
@@ -133,37 +212,29 @@ export function createClockUI() {
     { name: "Double: 12-Hour Compact", value: "%I:%M %p%n%a %d %b" },
     { name: "Double: Time Top Big", value: "%H:%M%n%a %d %b %Y" },
 
-    // Triple-line presets (for more vertical layouts)
+    // Triple-line
     { name: "Triple: Time + Day + Date", value: "%H:%M%n%A%n%B %d, %Y" },
     { name: "Triple: With Seconds", value: "%H:%M:%S%n%A%n%B %d" },
     { name: "Triple: 12-Hour Full", value: "%I:%M %p%n%A%n%B %d, %Y" },
 
-    // Extra creative ones
+    // Creative
     { name: "Single: Minimal", value: "%H:%M" },
     { name: "Double: Day Focus", value: "%A %d%n%H:%M" },
     { name: "Single: ISO-ish", value: "%Y-%m-%d %H:%M" },
   ];
+
   const presetRow = new Adw.ComboRow({
     title: "Select a Preset",
     model: new Gtk.StringList({ strings: presets.map((p) => p.name) }),
   });
   formatGroup.add(presetRow);
 
-  // 1. Get the current value from settings
+  // Sync preset selection with current format settings
   const currentFormat = settings.get_string("clock-custom-format");
-
-  // 2. Find the index of this format in your presets array
   const initialIndex = presets.findIndex((p) => p.value === currentFormat);
 
-  // 3. If a match is found, update the UI selection
   if (initialIndex !== -1) {
     presetRow.selected = initialIndex;
-  } else {
-    // OPTIONAL: If the current format is NOT in your list (it's custom),
-    // AdwComboRow will default to index 0.
-    // If you want to indicate it is custom, you would need to add
-    // a "Custom" entry to your presets array dynamically here.
-    // For now, it will just show the first item if no match is found.
   }
 
   presetRow.connect("notify::selected", () => {
@@ -172,7 +243,7 @@ export function createClockUI() {
     settings.set_string("clock-custom-format", val);
   });
 
-  // Visibility Logic
+  // Visibility Logic for Custom Format controls
   const updateVis = () => {
     const isCustom = settings.get_enum("clock-format-mode") === 1;
     formatEntryRow.visible = isCustom;
@@ -181,262 +252,66 @@ export function createClockUI() {
   settings.connect("changed::clock-format-mode", updateVis);
   updateVis();
 
-  // return page;
-  // --- GROUP 3: GUIDE (Collapsible) ---
-  const guideGroup = new Adw.PreferencesGroup({ title: "", description: "" });
-  page.add(guideGroup);
-
-  const guideExpander = new Adw.ExpanderRow({
+  // --- GROUP 3: FORMATTING GUIDE ---
+  const formattingGuideGroup = new Adw.PreferencesGroup({
     title: "Formatting Guide",
-    subtitle: "How custom date &amp; time formatting works",
+    description: "You can customize the clock using standard strftime format codes.",
   });
 
-  guideGroup.add(guideExpander);
-
-  // Content box
-  const guideBox = new Gtk.Box({
-    orientation: Gtk.Orientation.VERTICAL,
-  });
-
-  const guideLabel = new Gtk.Label({
-    label: `You can customize the clock using standard strftime format codes.
-
-Examples:
-• %H:%M — 24-hour time → 14:30
-• %I:%M %p — 12-hour time with AM/PM → 02:30 PM
-• %A — Full weekday name → Saturday
-• %a — Short weekday name → Sat
-• %B — Full month name → December
-• %b — Short month name → Dec
-• %d — Day of month (01-31) → 13
-• %n — New line (useful for multi-line clocks)
-
-Additional useful codes:
-• %H:%M:%S — 24-hour time with seconds → 14:30:45 (example with :45 seconds)
-• %I:%M:%S %p — 12-hour time with seconds → 02:30:45 PM
-• %Y — Full year → 2025
-• %y — Two-digit year → 25
-• %m — Month as number (01-12) → 12
-• %% — Literal percent sign → %
-• %p — AM/PM indicator (uppercase) → PM
-
-Common combinations:
-• %A, %B %d, %Y — Full date → Saturday, December 13, 2025
-• %a %b %d — Compact date → Sat Dec 13
-• %Y-%m-%d — ISO date → 2025-12-13
-• %H:%M   %a %d %b — Your standard single-line example → 14:30   Sat 13 Dec`,
-
-    wrap: true,
-  });
-
-  guideBox.append(guideLabel);
-
-  // Add content without extra row padding
-  const contentRow = new Adw.ActionRow({ title: "", activatable: false });
-  contentRow.add_suffix(guideBox);
-  guideExpander.add_row(contentRow);
-
-  // .................
-
-  const group = new Adw.PreferencesGroup({ title: "a", description: "b" });
-
-  const clamp = new Adw.Clamp({
-    // maximum_size: 1600,
+  const formattingGuideClamp = new Adw.Clamp({
     tightening_threshold: 600,
-    // orientation: Gtk.Orientation.HORIZONTAL,
-    // unit: Adw.LengthUnit.PX,
-    // vexpand: true,
-    // hexpand: true
   });
 
-  const list = new Gtk.ListBox({
+  const formattingGuideList = new Gtk.ListBox({
     selection_mode: Gtk.SelectionMode.SINGLE,
     activate_on_single_click: true,
     css_classes: ["boxed-list"],
   });
 
-  clamp.set_child(list);
-  group.add(clamp);
+  formattingGuideClamp.set_child(formattingGuideList);
+  formattingGuideGroup.add(formattingGuideClamp);
 
-  list.append(
-    makeExpander("Advanced", [
-      makeSwitch("Enable IPv6"),
-      makeSwitch("Debug logging"),
+  // Guide: Examples Section
+  formattingGuideList.append(
+    createExpandableSection("Examples", [
+      createGuideEntry("%H:%M — 24-hour time → 14:30"),
+      createGuideEntry("%I:%M %p — 12-hour time with AM/PM → 02:30 PM"),
+      createGuideEntry("%A — Full weekday name → Saturday"),
+      createGuideEntry("%a — Short weekday name → Sat"),
+      createGuideEntry("%B — Full month name → December"),
+      createGuideEntry("%b — Short month name → Dec"),
+      createGuideEntry("%d — Day of month (01-31) → 13"),
+      createGuideEntry("%n — New line (useful for multi-line clocks)"),
     ])
   );
 
-  list.append(
-    makeExpander("Testing", [
-      makeSwitch("Enable IPv6"),
-      makeSwitch("Debug logging"),
+  // Guide: Additional Codes Section
+  formattingGuideList.append(
+    createExpandableSection("Additional useful codes", [
+      createGuideEntry("%H:%M:%S — 24-hour time with seconds → 14:30:45"),
+      createGuideEntry("%I:%M:%S %p — 12-hour time with seconds → 02:30:45 PM"),
+      createGuideEntry("%Y — Full year → 2025"),
+      createGuideEntry("%y — Two-digit year → 25"),
+      createGuideEntry("%m — Month as number (01-12) → 12"),
+      createGuideEntry("%% — Literal percent sign → %"),
+      createGuideEntry("%p — AM/PM indicator (uppercase) → PM"),
     ])
   );
 
-  list.connect("row-activated", (_list, row) => {
+  // Guide: Common Combinations Section
+  formattingGuideList.append(
+    createExpandableSection("Common combinations", [
+      createGuideEntry("%A, %B %d, %Y — Full date → Saturday, December 13, 2025"),
+      createGuideEntry("%a %b %d — Compact date → Sat Dec 13"),
+      createGuideEntry("%Y-%m-%d — ISO date → 2025-12-13"),
+      createGuideEntry("%H:%M   %a %d %b — Standard single-line example → 14:30   Sat 13 Dec"),
+    ])
+  );
+
+  formattingGuideList.connect("row-activated", (_list, row) => {
     if (row._toggle) row._toggle();
   });
-  page.add(group);
-  // .................
+  page.add(formattingGuideGroup);
 
   return page;
-}
-
-// function makeExpander(title, children) {
-//   const row = new Gtk.ListBoxRow();
-//   const box = new Gtk.Box({ orientation: Gtk.Orientation.VERTICAL, spacing: 4 });
-//   row.set_child(box);
-
-//   const header = new Gtk.Button({
-//     label: title,
-//     css_classes: ['flat'],
-//     halign: Gtk.Align.START,
-//   });
-
-//   const revealer = new Gtk.Revealer({
-//     transition_type: Gtk.RevealerTransitionType.SLIDE_DOWN,
-//   });
-
-//   const content = new Gtk.Box({
-//     orientation: Gtk.Orientation.VERTICAL,
-//     spacing: 4,
-//     margin_start: 12,
-//   });
-
-//   children.forEach(w => content.append(w));
-//   revealer.set_child(content);
-
-//   header.connect('clicked', () => {
-//     revealer.reveal_child = !revealer.reveal_child;
-//   });
-
-//   box.append(header);
-//   box.append(revealer);
-
-//   return row;
-// }
-
-// function makeExpander(title, children) {
-//   const row = new Gtk.ListBoxRow();
-//   const box = new Gtk.Box({ orientation: Gtk.Orientation.VERTICAL, spacing: 12 });
-//   row.set_child(box);
-
-//   const header = new Gtk.Button({
-//     css_classes: ['flat'],
-//   });
-
-//   const headerBox = new Gtk.Box({ spacing: 6 });
-
-//   const arrow = new Gtk.Image({
-//     icon_name: 'pan-end-symbolic',
-//   });
-
-//   const label = new Gtk.Label({
-//     label: title,
-//     xalign: 0,
-//     hexpand: true,
-//     css_classes: ['title-4'],
-//   });
-
-//   headerBox.append(arrow);
-//   headerBox.append(label);
-//   header.set_child(headerBox);
-
-//   const revealer = new Gtk.Revealer({
-//     transition_type: Gtk.RevealerTransitionType.SLIDE_DOWN,
-//   });
-
-//   const content = new Gtk.Box({
-//     orientation: Gtk.Orientation.VERTICAL,
-//     spacing: 4,
-//     margin_start: 18,
-//   });
-
-//   children.forEach(w => content.append(w));
-//   revealer.set_child(content);
-
-//   header.connect('clicked', () => {
-//     const expanded = !revealer.reveal_child;
-//     revealer.reveal_child = expanded;
-//     arrow.icon_name = expanded
-//       ? 'pan-down-symbolic'
-//       : 'pan-end-symbolic';
-//   });
-
-//   box.append(header);
-//   box.append(revealer);
-
-//   return row;
-// }
-
-function makeExpander(title, children) {
-  const row = new Gtk.ListBoxRow();
-
-  const box = new Gtk.Box({
-    orientation: Gtk.Orientation.VERTICAL,
-    // spacing: 10,
-    margin_top: 12,
-    margin_bottom: 12,
-    margin_start: 25,
-    margin_end: 25,
-  });
-
-  row.set_child(box);
-
-  const header = new Gtk.Box({ spacing: 6, hexpand: true });
-
-  const label = new Gtk.Label({
-    label: title,
-    xalign: 0,
-    hexpand: true,
-    css_classes: ["title-4"],
-  });
-
-  const arrow = new Gtk.Image({
-    icon_name: "pan-down-symbolic",
-  });
-
-  header.append(label);
-  header.append(arrow);
-
-  const revealer = new Gtk.Revealer({
-    transition_type: Gtk.RevealerTransitionType.SLIDE_DOWN,
-  });
-
-  const content = new Gtk.Box({
-    orientation: Gtk.Orientation.VERTICAL,
-    spacing: 4,
-    margin_top: 6,
-    margin_start: 16,
-  });
-
-  children.forEach((w) => content.append(w));
-  revealer.set_child(content);
-
-  // expose a toggle method on the row
-  row._toggle = () => {
-    const expanded = !revealer.reveal_child;
-    revealer.reveal_child = expanded;
-    arrow.icon_name = expanded ? "pan-up-symbolic" : "pan-down-symbolic";
-  };
-
-  box.append(header);
-  box.append(revealer);
-
-  return row;
-}
-
-function makeSwitch(label) {
-  const box = new Gtk.Box({ spacing: 12 });
-
-  box.append(
-    new Gtk.Label({
-      label,
-      xalign: 0,
-      hexpand: true,
-    })
-  );
-
-  box.append(new Gtk.Switch());
-
-  return box;
 }

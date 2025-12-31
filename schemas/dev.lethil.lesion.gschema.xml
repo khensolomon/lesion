@@ -34,14 +34,6 @@
     <value nick="right" value="1"/>
     <value nick="bottom" value="2"/>
     <value nick="left" value="3"/>
-  </enum>  
-
-  <!-- Dock's Enums -->
-  <enum id="dev.lethil.lesion.DockPosition">
-    <value nick="bottom" value="0"/>
-    <value nick="left" value="1"/>
-    <value nick="right" value="2"/>
-    <value nick="top" value="3"/>
   </enum>
 
   <schema id="dev.lethil.lesion" path="/dev/lethil/lesion/">
@@ -73,20 +65,6 @@
     <key name="indicator-custom-icon" type="s">
       <default>''</default>
       <summary>Custom icon path for the main indicator</summary>
-    </key>
-
-    <!-- Corners -->
-    <key name="corners-enabled" type="b">
-      <default>false</default>
-      <summary>Enable custom corner rounding</summary>
-    </key>
-    <key name="corners-radius" type="i">
-      <default>12</default>
-      <summary>Border radius in pixels</summary>
-    </key>
-    <key name="corners-flat" type="b">
-      <default>false</default>
-      <summary>Force flat corners (radius 0)</summary>
     </key>
 
     <!-- Geometry -->
@@ -218,85 +196,5 @@
     <key name="apps-overview-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
     <key name="apps-overview-index" type="i"><default>0</default></key>
     <key name="apps-overview-hide-default" type="b"><default>false</default></key>
-
-    <!-- Dock -->
-    <key name="dock-enabled" type="b">
-      <default>false</default>
-      <summary>Enable persistent dock</summary>
-    </key>
-    <key name="dock-position" enum="dev.lethil.lesion.DockPosition">
-      <default>'bottom'</default>
-      <summary>Screen edge position</summary>
-    </key>
-    <key name="dock-panel-mode" type="b">
-      <default>false</default>
-      <summary>Extend dock to screen edges (Panel mode)</summary>
-    </key>
-    <key name="dock-icon-size" type="i">
-      <default>48</default>
-      <summary>App icon size in pixels</summary>
-    </key>
-    <key name="dock-radius" type="i">
-      <default>16</default>
-      <summary>Corner radius</summary>
-    </key>
-    <key name="dock-opacity" type="d">
-      <default>0.8</default>
-      <summary>Background opacity (0.0 to 1.0)</summary>
-    </key>
-    <key name="dock-color" type="s">
-      <default>'#242424'</default>
-      <summary>Background color hex</summary>
-    </key>
-    <key name="dock-autohide" type="b">
-      <default>false</default>
-      <summary>Intelligent auto-hide</summary>
-    </key>
-    <key name="dock-padding" type="i">
-      <default>6</default>
-      <summary>Internal padding around icons</summary>
-    </key>
-    <key name="dock-margin" type="i">
-      <default>0</default>
-      <summary>External margin from screen edge</summary>
-    </key>
-    <key name="dock-show-apps" type="b">
-      <default>true</default>
-      <summary>Show or hide the applications grid button</summary>
-    </key>
-    <key name="dock-item-spacing" type="i">
-      <default>6</default>
-      <summary>Space between icons in pixels</summary>
-    </key>
-    <key name="dock-item-radius" type="i">
-      <default>12</default>
-      <summary>Border radius of individual app buttons</summary>
-    </key>
-    <key name="dock-item-color" type="s">
-      <default>'rgba(255,255,255,0.1)'</default>
-      <summary>Background color of app buttons</summary>
-    </key>
-    <key name="dock-item-padding" type="i">
-      <default>0</default>
-      <summary>Padding inside individual app buttons</summary>
-    </key>
-    <key name="dock-item-margin" type="i">
-      <default>0</default>
-      <summary>Margin around individual app buttons</summary>
-    </key>
-
-    <key name="dock-border-width" type="i">
-      <default>0</default>
-      <summary>Container border width</summary>
-    </key>
-    <key name="dock-border-color" type="s">
-      <default>'rgba(255,255,255,0.2)'</default>
-      <summary>Container border color</summary>
-    </key>
-    <key name="dock-hover-scale" type="d">
-      <default>1.0</default>
-      <summary>Scale factor on hover (1.0 to 1.5)</summary>
-    </key>
-
   </schema>
 </schemalist>

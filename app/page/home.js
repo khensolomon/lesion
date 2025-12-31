@@ -73,8 +73,8 @@ export function createHomeUI(navigator, goToPage) {
     page.add(navGroup);
 
     navGroup.add(_createNavRow('Wallpaper Engine', 'Manage dual-mode backgrounds', 'preferences-desktop-wallpaper-symbolic', 'wallpaper', goToPage));
-    navGroup.add(_createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-theme-symbolic', 'themes', goToPage));
-    navGroup.add(_createNavRow('Show Apps Button', 'Customize the app grid button', 'view-app-grid-symbolic', 'showapps', goToPage));
+    navGroup.add(_createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-theme-symbolic', 'styles', goToPage));
+    navGroup.add(_createNavRow('Apps', 'Customize the app grid button', 'view-app-grid-symbolic', 'apps', goToPage));
 
 
     // --- 4. DATA MANAGEMENT (New) ---

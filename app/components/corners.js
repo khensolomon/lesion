@@ -1,101 +1,308 @@
-import Gio from 'gi://Gio';
+import Clutter from 'gi://Clutter';
+import GObject from 'gi://GObject';
+import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
 import GLib from 'gi://GLib';
+import Gio from 'gi://Gio'; // Added missing import
 import St from 'gi://St';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { log, logError } from '../util/logger.js';
 import { ExtensionComponent } from './base.js';
 
+// --- GLSL SHADER SOURCE ---
+// This runs on the GPU for every pixel of the window.
+// It calculates if a pixel is outside the corner radius and discards it.
+const SHADER_SOURCE = `
+uniform sampler2D tex;
+uniform float height;
+uniform float width;
+uniform float radius;
+
+void main () {
+    // Standard texture lookup
+    vec4 color = cogl_color_in * texture2D(tex, cogl_tex_coord_in[0].xy);
+    
+    // Convert texture coordinates (0.0 - 1.0) to pixel coordinates
+    vec2 pos = cogl_tex_coord_in[0].xy * vec2(width, height);
+    
+    // Determine the center of the closest corner circle
+    vec2 center = vec2(0.0);
+    bool in_corner = false;
+    
+    if (pos.x < radius && pos.y < radius) {
+        // Top Left
+        center = vec2(radius, radius);
+        in_corner = true;
+    } else if (pos.x > width - radius && pos.y < radius) {
+        // Top Right
+        center = vec2(width - radius, radius);
+        in_corner = true;
+    } else if (pos.x < radius && pos.y > height - radius) {
+        // Bottom Left
+        center = vec2(radius, height - radius);
+        in_corner = true;
+    } else if (pos.x > width - radius && pos.y > height - radius) {
+        // Bottom Right
+        center = vec2(width - radius, height - radius);
+        in_corner = true;
+    }
+    
+    // If we are in a corner region, check distance from center
+    if (in_corner) {
+        if (distance(pos, center) > radius) {
+            discard; // Cut it out!
+        }
+    }
+    
+    cogl_color_out = color;
+}
+`;
+
+// --- CUSTOM EFFECT CLASS ---
+// Wraps the generic Clutter.ShaderEffect to handle our uniforms (radius, size)
+const RoundedCornerEffect = GObject.registerClass({
+    GTypeName: 'LesionRoundedCornerEffect',
+}, class RoundedCornerEffect extends Clutter.ShaderEffect {
+    _init(radius) {
+        super._init({ shader_type: Clutter.ShaderType.FRAGMENT_SHADER });
+        this._radius = radius;
+        this.set_shader_source(SHADER_SOURCE);
+    }
+
+    vfunc_paint_target(paint_node, paint_context) {
+        const actor = this.get_actor();
+        if (!actor) return;
+
+        const [width, height] = actor.get_size();
+
+        // Pass uniforms to the GPU
+        // Fix: Ensure values are explicitly floats for the shader
+        this.set_uniform_value('width', parseFloat(width));
+        this.set_uniform_value('height', parseFloat(height));
+        this.set_uniform_value('radius', parseFloat(this._radius));
+
+        // Chain up to draw
+        super.vfunc_paint_target(paint_node, paint_context);
+    }
+
+    updateRadius(radius) {
+        this._radius = radius;
+        this.queue_repaint();
+    }
+});
+
 /**
- * Manages the application of custom corner radii to GNOME Shell and GTK applications.
- * Handles the generation of CSS and safe injection into user config files.
- * @extends ExtensionComponent
+ * Manages Window Effects (Mutter Level) and Shell Styles
  */
 export class CornersManager extends ExtensionComponent {
     
-    /**
-     * Called when the extension component is enabled.
-     * Initializes configuration paths and sets up settings listeners.
-     */
     onEnable() {
-        /** @type {Gio.File|null} Reference to the generated shell CSS file */
+        logError("CornersManager (Mutter): Initializing...");
+        
         this._cssFile = null;
-        
-        /** @type {string} Name of the generated CSS file */
         this._generatedFile = 'dynamic-corners.css';
+        this._windowSignals = []; // Track signals connected to individual window objects if needed
+        this._displaySignal = null;
         
-        // Marker tags to safely edit user files without deleting other configs
-        this.BLOCK_START = '/* LESION-CORNERS-START */';
-        this.BLOCK_END = '/* LESION-CORNERS-END */';
-
-        // Apply settings immediately
+        // Initial Sync
         this._sync();
 
-        // Watch for changes
+        // Settings Listeners
         this.observe('changed::corners-enabled', () => this._sync());
-        this.observe('changed::corners-radius', () => this._sync());
+        this.observe('changed::corners-radius', () => {
+            // Live update for radius to avoid full destruction/recreation
+            this._updateExistingWindowsRadius(); 
+        });
         this.observe('changed::corners-flat', () => this._sync());
     }
 
-    /**
-     * Called when the extension component is disabled.
-     * Reverts all changes to Shell and GTK configurations.
-     */
     onDisable() {
+        logError("CornersManager: Disabling...");
+        this._disableWindowEffects();
         this._unloadShellStyles();
-        this._cleanupShellFile();
-        this._cleanGtkConfig(); 
     }
 
-    /**
-     * Synchronizes the current settings with the applied styles.
-     * Decides whether to apply styles or clean them up based on the 'corners-enabled' key.
-     * @private
-     */
     _sync() {
         const settings = this.getSettings();
         const enabled = settings.get_boolean('corners-enabled');
 
         if (!enabled) {
+            this._disableWindowEffects();
             this._unloadShellStyles();
-            this._cleanGtkConfig();
             return;
         }
 
         const isFlat = settings.get_boolean('corners-flat');
         const radius = isFlat ? 0 : settings.get_int('corners-radius');
 
-        // 1. Update GNOME Shell (Overview, Panel, etc.)
+        // 1. Shell UI (Still needs CSS)
         this._syncShell(radius, isFlat);
 
-        // 2. Update Applications (GTK3 & GTK4)
-        this._syncGtk(radius);
+        // 2. Windows (Mutter Shader)
+        // If flat, we just disable the effect (radius 0 shader is wasteful)
+        if (isFlat || radius === 0) {
+            this._disableWindowEffects();
+        } else {
+            this._enableWindowEffects(radius);
+        }
     }
 
-    /**
-     * Generates and loads the CSS for GNOME Shell elements.
-     * @param {number} radius - The border radius in pixels.
-     * @param {boolean} isFlat - Whether to force flat corners on specific elements like panels.
-     * @private
-     */
+    // --- WINDOW MANAGEMENT (MUTTER/CLUTTER) ---
+
+    // Helper to abstract the API change across GNOME versions
+    _getWindowActors() {
+        if (global.get_window_actors) {
+            return global.get_window_actors();
+        }
+        
+        // GNOME 45+ fallback: Iterate MetaWindows and get their actors
+        const actors = [];
+        const windows = global.display.list_all_windows(); 
+        for (const win of windows) {
+            const actor = win.get_compositor_private();
+            if (actor) actors.push(actor);
+        }
+        return actors;
+    }
+
+    _enableWindowEffects(radius) {
+        logError(`CornersManager: Enabling Window Shaders (r=${radius})`);
+        
+        // 1. Apply to existing windows
+        this._getWindowActors().forEach(actor => {
+            this._applyEffectToActor(actor, radius);
+        });
+
+        // 2. Watch for new windows
+        if (!this._displaySignal) {
+            this._displaySignal = global.display.connect('window-created', (display, window) => {
+                // Wait for the actor to be ready
+                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                   const actor = window.get_compositor_private();
+                   if (actor) {
+                       this._applyEffectToActor(actor, radius);
+                   }
+                   return GLib.SOURCE_REMOVE;
+                });
+            });
+        }
+    }
+
+    _disableWindowEffects() {
+        // 1. Stop watching
+        if (this._displaySignal) {
+            global.display.disconnect(this._displaySignal);
+            this._displaySignal = null;
+        }
+
+        // 2. Remove effects
+        this._getWindowActors().forEach(actor => {
+            this._removeEffectFromActor(actor);
+        });
+    }
+
+    _applyEffectToActor(actor, radius) {
+        if (!actor || actor.is_destroyed()) return;
+
+        // Skip if already has OUR effect
+        const existing = actor.get_effect('lesion-corners');
+        if (existing) {
+            if (existing instanceof RoundedCornerEffect) {
+                existing.updateRadius(radius);
+            }
+            return;
+        }
+
+        // Check window type (don't round fullscreen, desktop, etc)
+        const win = actor.meta_window;
+        if (win) {
+             const type = win.get_window_type();
+             if (type === Meta.WindowType.DESKTOP || 
+                 type === Meta.WindowType.DOCK || 
+                 win.is_fullscreen()) {
+                 return;
+             }
+        }
+
+        const effect = new RoundedCornerEffect(radius);
+
+        // Fix: Add resize listener to trigger repaint when window size changes
+        const sizeId = actor.connect('notify::size', () => effect.queue_repaint());
+        effect._sizeSignalId = sizeId; // Store signal ID on the effect for cleanup
+
+        actor.add_effect_with_name('lesion-corners', effect);
+    }
+
+    _removeEffectFromActor(actor) {
+        if (!actor || actor.is_destroyed()) return;
+        
+        const effect = actor.get_effect('lesion-corners');
+        if (effect) {
+            // Cleanup the size listener we added
+            if (effect._sizeSignalId) {
+                actor.disconnect(effect._sizeSignalId);
+            }
+            actor.remove_effect_by_name('lesion-corners');
+        }
+    }
+
+    _updateExistingWindowsRadius() {
+        const settings = this.getSettings();
+        const isFlat = settings.get_boolean('corners-flat');
+        const radius = isFlat ? 0 : settings.get_int('corners-radius');
+
+        if (isFlat || radius === 0) {
+            this._disableWindowEffects();
+            return;
+        }
+
+        // If not running, start running
+        if (!this._displaySignal) {
+            this._enableWindowEffects(radius);
+            return;
+        }
+
+        // Just update values
+        this._getWindowActors().forEach(actor => {
+            const effect = actor.get_effect('lesion-corners');
+            if (effect && effect instanceof RoundedCornerEffect) {
+                effect.updateRadius(radius);
+            } else {
+                this._applyEffectToActor(actor, radius);
+            }
+        });
+    }
+
+    // --- SHELL UI (CSS) ---
+    // Kept for Panels, Search, etc.
+    
     _syncShell(radius, isFlat) {
         this._unloadShellStyles();
+        
+        // Ensure style dir exists
+        const styleDir = GLib.build_filenamev([this._extension.path, 'style']);
+        try {
+             if (!GLib.file_test(styleDir, GLib.FileTest.EXISTS)) {
+                 Gio.File.new_for_path(styleDir).make_directory_with_parents(null);
+             }
+        } catch(e) {}
 
         const cssContent = `
             .window-clone-border, 
             .modal-dialog, 
-            .popup-menu-content, 
             .workspace-thumbnail-indicator,
-            .search-section-content,
-            .switcher-list {
+            #panel,
+            #panel .panel-button,
+            .overview-controls,
+            .window-preview {
                 border-radius: ${radius}px !important;
             }
-            ${isFlat ? `.panel-button { border-radius: 0px !important; }` : ''}
+            ${isFlat ? `#panel, .panel-button { border-radius: 0px !important; }` : ''}
         `;
 
         try {
-            const path = GLib.build_filenamev([this._extension.path, 'style', this._generatedFile]);
+            const path = GLib.build_filenamev([styleDir, this._generatedFile]);
             const file = Gio.File.new_for_path(path);
-            
-            // Replace contents asynchronously or synchronously - keeping sync for simplicity in settings callback
             file.replace_contents(cssContent, null, false, Gio.FileCreateFlags.NONE, null);
 
             const themeContext = St.ThemeContext.get_for_stage(global.stage);
@@ -108,10 +315,6 @@ export class CornersManager extends ExtensionComponent {
         }
     }
 
-    /**
-     * Unloads the previously loaded stylesheet from the GNOME Shell theme.
-     * @private
-     */
     _unloadShellStyles() {
         if (this._cssFile) {
             const themeContext = St.ThemeContext.get_for_stage(global.stage);
@@ -120,127 +323,5 @@ export class CornersManager extends ExtensionComponent {
             this._cssFile = null;
             themeContext.set_theme(theme);
         }
-    }
-
-    /**
-     * Deletes the temporary CSS file generated for GNOME Shell.
-     * @private
-     */
-    _cleanupShellFile() {
-        try {
-            const path = GLib.build_filenamev([this._extension.path, 'style', this._generatedFile]);
-            const file = Gio.File.new_for_path(path);
-            if (file.query_exists(null)) file.delete(null);
-        } catch(e) {}
-    }
-
-    /**
-     * Prepares the CSS content for GTK applications and injects it into user config.
-     * @param {number} radius - The border radius in pixels.
-     * @private
-     */
-    _syncGtk(radius) {
-        // Stronger selectors to override system themes
-        const gtkCss = `
-${this.BLOCK_START}
-/* Force radius on main window elements */
-window, 
-.background, 
-.window-frame, 
-.decoration,
-decoration {
-    border-radius: ${radius}px !important;
-}
-
-/* Fix bottom corners specifically for Libadwaita/Adwaita */
-window.csd, 
-.window-frame.csd, 
-.solid-csd {
-    border-bottom-left-radius: ${radius}px !important;
-    border-bottom-right-radius: ${radius}px !important;
-}
-
-/* Popovers and Menus */
-menu, .csd.popup {
-    border-radius: ${radius}px !important;
-}
-${this.BLOCK_END}
-`;
-        // Apply to both GTK 4 (Libadwaita apps) and GTK 3 (Older apps)
-        this._writeUserGtkConfig('gtk-4.0', gtkCss);
-        this._writeUserGtkConfig('gtk-3.0', gtkCss);
-    }
-
-    /**
-     * Removes the extension's CSS blocks from GTK configurations.
-     * @private
-     */
-    _cleanGtkConfig() {
-        // Write empty string to remove our block
-        this._writeUserGtkConfig('gtk-4.0', ''); 
-        this._writeUserGtkConfig('gtk-3.0', ''); 
-    }
-
-    /**
-     * Writes (or cleans) specific CSS blocks in the user's GTK configuration file.
-     * Performs a check to avoid writing to disk if the content hasn't changed.
-     * * @param {string} gtkVersionDir - The GTK directory name (e.g., 'gtk-3.0', 'gtk-4.0').
-     * @param {string} newContent - The CSS content to insert (or empty string to remove).
-     * @private
-     */
-    _writeUserGtkConfig(gtkVersionDir, newContent) {
-        try {
-            const configDir = GLib.get_user_config_dir();
-            const gtkPath = GLib.build_filenamev([configDir, gtkVersionDir, 'gtk.css']);
-            const file = Gio.File.new_for_path(gtkPath);
-
-            let content = '';
-            let originalContent = '';
-            
-            // Read existing file if it exists
-            if (file.query_exists(null)) {
-                const [success, raw] = file.load_contents(null);
-                if (success) {
-                    originalContent = new TextDecoder().decode(raw);
-                    content = originalContent;
-                }
-            }
-
-            // Regex to remove ONLY our previous block, keeping user's other configs safe
-            const regex = new RegExp(`${this._escapeRegExp(this.BLOCK_START)}[\\s\\S]*?${this._escapeRegExp(this.BLOCK_END)}\\n?`, 'g');
-            content = content.replace(regex, '');
-
-            // Append new content if provided
-            if (newContent) {
-                if (content.length > 0 && !content.endsWith('\n')) content += '\n';
-                content += newContent;
-            }
-
-            // OPTIMIZATION: If the content hasn't changed, do nothing.
-            // This prevents "doing something" when disabled if the file is already clean.
-            if (content === originalContent) {
-                return;
-            }
-
-            // Ensure directory exists
-            const parent = file.get_parent();
-            if (!parent.query_exists(null)) parent.make_directory_with_parents(null);
-
-            file.replace_contents(content, null, false, Gio.FileCreateFlags.NONE, null);
-            log(`Updated ${gtkVersionDir}/gtk.css`);
-
-        } catch (e) {
-            logError(`Failed to write config for ${gtkVersionDir}`, e);
-        }
-    }
-
-    /**
-     * Escapes special characters for use in a Regular Expression.
-     * @param {string} string - The string to escape.
-     * @returns {string} The escaped string.
-     * @private
-     */
-    _escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 }

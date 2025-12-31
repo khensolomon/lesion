@@ -29,3 +29,4 @@ Improve
 Remove
 
 - ShowApps
+- corners

@@ -5,10 +5,10 @@ import { Indicator } from '../panel/indicator.js';
 // Logic Modules (Moved from app/ext to app/components)
 import { WallpaperManager } from './wallpaper.js';
 import { StyleManager } from './styles.js';
-import { CornersManager } from './corners.js';
 import { GeometryManager } from './geometry.js';
 import { ClockManager } from './clock.js';
 import { AppsManager } from './apps.js';
+// import { CornersManager } from './corners.js';
 // import { DockManager } from './dock.js';
 // import { MimicManager } from './mimic.js';
 
@@ -23,11 +23,11 @@ export function getComponents() {
         
         WallpaperManager,
         StyleManager,
-        CornersManager,
         GeometryManager,
         ClockManager,
+        // CornersManager,
         // DockManager,
-        AppsManager,
         // MimicManager,
+        AppsManager,
     ];
 }
