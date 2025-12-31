@@ -79,13 +79,8 @@ class AppPanelButtonBase extends PanelMenu.Button {
     }
 
     _onHoverChanged() {
-        // Skip hover effects if dragging or if drag target
         if (this._dragged) return;
-        
-        // POLISH: Subtle scale animation on hover
         const scale = this.hover ? 1.15 : 1.0;
-        
-        // Don't animate if this button is currently a DND drop target (handled externally)
         if (this.iconActor.opacity < 255 && !this.hover) return;
 
         this.iconActor.ease({
@@ -110,7 +105,6 @@ class AppPanelButtonBase extends PanelMenu.Button {
             if (this._dragged) return;
             this._dragged = true;
 
-            // Find the BoxLayout container
             this._container = this.get_parent();
             while (this._container && !(this._container instanceof St.BoxLayout)) {
                 this._container = this._container.get_parent();
@@ -120,13 +114,8 @@ class AppPanelButtonBase extends PanelMenu.Button {
                 return;
             }
 
-            // Hide original button
             this.visible = false;
-
-            // Create visible placeholder
             this._createPlaceholder();
-
-            // Monitor drag motion
             this._startDragMonitoring();
         });
 
@@ -161,7 +150,7 @@ class AppPanelButtonBase extends PanelMenu.Button {
             child: new St.Icon({
                 gicon: this.iconActor.gicon,
                 icon_size: (this.iconActor.icon_size || 20), 
-                opacity: 100, // Ghost effect
+                opacity: 100,
                 x_align: Clutter.ActorAlign.CENTER,
                 y_align: Clutter.ActorAlign.CENTER
             })
@@ -199,7 +188,8 @@ class AppPanelButtonBase extends PanelMenu.Button {
                     if (child === this._placeholder || !child.visible) continue;
                     if (child === this || (child.contains && child.contains(this))) continue;
 
-                    const [childX, childW] = child.get_transformed_position();
+                    const [childX] = child.get_transformed_position();
+                    const childW = child.width;
                     const triggerX = childX + childW * ACTIVATION_RATIO;
 
                     if (x < triggerX) break;
@@ -207,10 +197,10 @@ class AppPanelButtonBase extends PanelMenu.Button {
                 }
 
                 const currentIndex = children.indexOf(this._placeholder);
-                if (targetIndex !== currentIndex) {
+                if (targetIndex !== currentIndex && targetIndex !== lastIndex) {
                     try {
                         this._container.set_child_at_index(this._placeholder, targetIndex);
-                    } catch(e) {}
+                    } catch (error) {}
                     lastIndex = targetIndex;
                 }
 
@@ -259,6 +249,7 @@ class AppPanelButtonBase extends PanelMenu.Button {
                 return GLib.SOURCE_REMOVE;
             });
         }
+
         this._container = null;
     }
 
@@ -310,7 +301,6 @@ class AppPanelButtonBase extends PanelMenu.Button {
         return this._windows || [];
     }
 
-    // UX: Cycle windows on scroll
     vfunc_scroll_event(event) {
         const windows = this._getWindows();
         if (windows.length > 1) {
@@ -341,7 +331,6 @@ class AppPanelButtonBase extends PanelMenu.Button {
                     if (this._isDraggable) return Clutter.EVENT_PROPAGATE;
                     return Clutter.EVENT_STOP;
                 }
-                // UX: Middle click (2) -> New Window
                 if (button === 2) {
                     if (this._app) {
                          this._app.open_new_window(-1);
@@ -389,7 +378,7 @@ export class AppsManager extends ExtensionComponent {
     onEnable() {
         this._items = { favorites: [], running: [], disks: [], trash: null };
         this._handledWindows = new Set();
-        this._trashName = 'Trash'; // Default fallback
+        this._trashName = 'Trash'; 
         
         this._appSystem = Shell.AppSystem.get_default();
         this._winTracker = Shell.WindowTracker.get_default();
@@ -405,6 +394,7 @@ export class AppsManager extends ExtensionComponent {
         const updateAll = () => this._updateState();
         const visualUpdate = () => this._updateVisuals();
 
+        // FIX: Rebuild on icon changes, not just updateState
         const rebuild = () => this._rebuildAll();
         this.observe('changed::apps-icon-size', rebuild);
         this.observe('changed::apps-icon-desaturate', rebuild);
@@ -561,13 +551,13 @@ export class AppsManager extends ExtensionComponent {
         this._syncDisks();
         this._syncFavorites();
         this._refreshHandledWindowsMap(); 
-        this._syncRunning();
+        this._syncRunning(true);
         this._updateVisuals();
     }
 
     _updateState() {
         this._refreshHandledWindowsMap();
-        this._syncRunning(); 
+        this._syncRunning(false); 
         this._updateVisuals();
     }
 

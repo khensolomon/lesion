@@ -109,35 +109,49 @@ export class AppButton {
 
         // --- Positioning Logic ---
         
-        // 1. Remove from container first
-        if (this._button.get_parent() === this._container) {
-            this._container.remove_child(this._button);
+        // 1. Remove from container first to ensure clean insertion
+        if (this._button.get_parent()) {
+            this._button.get_parent().remove_child(this._button);
         }
 
-        // 2. Find Activities Button Index
-        let actIndex = 0;
-        if (this._activitiesButton) {
-            const children = this._container.get_children();
-            actIndex = children.indexOf(this._activitiesButton);
-            if (actIndex < 0) actIndex = 0; 
-        }
-
-        // 3. Get Setting (Enum: 0=Replace, 1=After, 2=Before)
-        const position = this._settings.get_enum('showapps-position'); 
+        // 2. Get Settings and References
+        const position = this._settings.get_enum('showapps-position'); // 0=Replace, 1=After, 2=Before
+        const actBtn = this._activitiesButton;
         
-        if (position === 0) {
-            // Mode: Replace
-            if (this._activitiesButton) this._activitiesButton.hide();
-            this._container.insert_child_at_index(this._button, actIndex);
-        } else if (position === 1) {
-            // Mode: After (Next to)
-            if (this._activitiesButton) this._activitiesButton.show();
-            this._container.insert_child_at_index(this._button, actIndex + 1);
-        } else if (position === 2) {
-            // Mode: Before
-            if (this._activitiesButton) this._activitiesButton.show();
-            this._container.insert_child_at_index(this._button, actIndex);
+        // 3. Handle Activities Button Visibility
+        // We do this before calculating indices to ensure state is consistent, 
+        // though visibility doesn't strictly affect child index in Clutter, it's good practice.
+        if (actBtn) {
+            if (position === 0) { // Replace
+                actBtn.hide();
+            } else {
+                actBtn.show();
+            }
         }
+
+        // 4. Calculate Insertion Index
+        let insertIndex = 0; 
+        
+        // Check if activities button is valid and in the correct container
+        if (actBtn && actBtn.get_parent() === this._container) {
+            const children = this._container.get_children();
+            const actIndex = children.indexOf(actBtn);
+
+            if (actIndex >= 0) {
+                if (position === 1) { 
+                    // Mode: After
+                    // Insert at index + 1 to appear after the activities button
+                    insertIndex = actIndex + 1;
+                } else {
+                    // Mode: Before OR Replace
+                    // Insert at actIndex to appear before (or strictly 'at' the spot of) the activities button
+                    insertIndex = actIndex;
+                }
+            }
+        }
+
+        // 5. Insert Button
+        this._container.insert_child_at_index(this._button, insertIndex);
 
         // Ensure state is correct after sync
         this._updateState();
