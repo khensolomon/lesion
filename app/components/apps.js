@@ -4,13 +4,14 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib'; 
 import Shell from 'gi://Shell';
 import GObject from 'gi://GObject';
+import Pango from 'gi://Pango';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js'; 
 import * as DND from 'resource:///org/gnome/shell/ui/dnd.js';
 import { ExtensionComponent } from './base.js';
-import { logError } from '../util/logger.js'; 
+import { log, logError } from '../util/logger.js'; 
 
 /**
  * Base Button Class for Application Panel Items
@@ -99,7 +100,7 @@ class AppPanelButtonBase extends PanelMenu.Button {
         
         // Only animate scaling if it is an Icon
         if (this.iconActor instanceof St.Icon) {
-            const scale = this.hover ? 1.1 : 1.0;
+            const scale = this.hover ? 1.15 : 1.0;
             if (this.iconActor.opacity < 255 && !this.hover) return;
 
             this.iconActor.ease({
@@ -589,6 +590,12 @@ export class AppsManager extends ExtensionComponent {
             this._trashMonitor.cancel();
             this._trashMonitor = null;
         }
+        
+        // Cleanup Identity Dialog if open
+        if (this._identityDialog) {
+            this._identityDialog.destroy();
+            this._identityDialog = null;
+        }
     }
 
     _trackWindow(win) {
@@ -844,12 +851,32 @@ export class AppsManager extends ExtensionComponent {
 
     _buildContextAwareAppMenu(menu, app, appId, isFavorite) {
         menu.removeAll();
-        const isRunning = app.get_n_windows() > 0;
+        const windows = app.get_windows();
+        const isRunning = windows.length > 0;
         
-        if (!isRunning) {
-            this._appendAction(menu, 'Open', () => app.open_new_window(-1));
-        } else {
+        // --- NEW: Window Switching List ---
+        if (isRunning) {
+            this._appendSeparator(menu);
+            // Header for windows
+            const header = new PopupMenu.PopupMenuItem('Open Windows', { reactive: false });
+            header.actor.add_style_class_name('popup-subtitle-menu-item');
+            header.actor.style = 'font-weight: bold; padding-bottom: 4px; opacity: 0.7;';
+            menu.addMenuItem(header);
+
+            windows.forEach(w => {
+                let title = w.get_title() || 'Untitled Window';
+                if (title.length > 40) title = title.substring(0, 37) + '...';
+                
+                // Add a small dot if focused
+                const isFocused = global.display.focus_window === w;
+                if (isFocused) title = `• ${title}`;
+
+                this._appendAction(menu, title, () => w.activate(global.get_current_time()));
+            });
+            this._appendSeparator(menu);
             this._appendAction(menu, 'New Window', () => app.open_new_window(-1));
+        } else {
+            this._appendAction(menu, 'Open', () => app.open_new_window(-1));
         }
 
         const settings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
@@ -867,10 +894,314 @@ export class AppsManager extends ExtensionComponent {
             }
         });
 
+        // --- NEW: Check for Desktop Actions (Preferences/Settings) ---
+        const appInfo = app.get_app_info();
+        if (appInfo) {
+            const actions = appInfo.list_actions();
+            // Look for standard preference actions in the desktop file
+            const prefAction = actions.find(a => {
+                const lower = a.toLowerCase();
+                return lower === 'preferences' || lower === 'settings' || lower === 'options';
+            });
+
+            if (prefAction) {
+                this._appendSeparator(menu);
+                // Get localized name (e.g., "Preferences")
+                const label = appInfo.get_action_name(prefAction) || 'Preferences';
+                this._appendAction(menu, label, () => {
+                    try {
+                        appInfo.launch_action(prefAction, null);
+                    } catch (e) {
+                        logError(`Failed to launch action ${prefAction} for ${appId}`, e);
+                    }
+                });
+            }
+        }
+
+        // --- RENAMED: System Settings Link -> "System" ---
+        this._appendSeparator(menu);
+        this._appendAction(menu, 'System', () => {
+            try {
+                // Remove .desktop suffix for control center argument if present, though it often handles both
+                const cleanId = appId.replace(/\.desktop$/i, '');
+                GLib.spawn_command_line_async(`gnome-control-center applications ${cleanId}`);
+            } catch (e) {
+                logError('Failed to launch system settings', e);
+            }
+        });
+
+        // --- RENAMED: "About" -> "Software" (User preferred) ---
+        this._appendAction(menu, 'Software', () => {
+            const uri = this._resolveAppStoreId(appId);
+            try {
+                Gio.AppInfo.launch_default_for_uri(uri, null);
+            } catch(e) {
+                Main.notify('Lesion', `Unable to find ${app.get_name()} in Software Center.`);
+            }
+        });
+
+        // --- RENAMED: "Identity" -> "Properties" (User preferred)
+        this._appendAction(menu, 'Properties', () => this._showIdentityDialog(app, appId));
+
         if (isRunning) {
             this._appendSeparator(menu);
             this._appendAction(menu, 'Quit', () => app.request_quit());
         }
+    }
+
+    _showIdentityDialog(app, appId) {
+        // Destroy existing dialog if present
+        if (this._identityDialog) {
+            this._identityDialog.destroy();
+            this._identityDialog = null;
+        }
+
+        // Build Data Strings
+        const info = [
+            `Name: ${app.get_name()}`,
+            `ID: ${appId}`
+        ];
+        
+        const appInfo = app.get_app_info();
+        if (appInfo) {
+            info.push(`Command: ${appInfo.get_commandline() || 'N/A'}`);
+            info.push(`Path: ${appInfo.get_filename() || 'N/A'}`);
+        }
+        
+        const windows = app.get_windows();
+        if (windows.length > 0 && windows[0].get_wm_class) {
+             info.push(`WM Class: ${windows[0].get_wm_class()}`);
+        }
+
+        const fullTextToCopy = info.join('\n');
+
+        // Create Container (Not ModalDialog, but a generic Box)
+        this._identityDialog = new St.BoxLayout({
+            vertical: true,
+            reactive: true,
+            can_focus: true, // Allow focus for key events
+            style_class: 'modal-dialog', // Reuse modal style for visuals
+            style: 'min-width: 360px; padding: 12px;' // Removed manual borders/colors to respect theme
+        });
+
+        // Header (Draggable)
+        const header = new St.BoxLayout({ vertical: false, style: 'padding-bottom: 12px;' });
+        const icon = app.create_icon_texture(32);
+        const title = new St.Label({ 
+            // UPDATED TITLE
+            text: 'Properties', 
+            style: 'font-weight: bold; font-size: 1.2em; padding-left: 12px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true // Title takes up remaining space
+        });
+        
+        // Close Button
+        const closeBtn = new St.Button({
+            child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 16 }),
+            style_class: 'window-close', // Standard standard circular close button
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER
+        });
+        closeBtn.connect('clicked', () => {
+            this._identityDialog.destroy();
+            this._identityDialog = null;
+        });
+
+        header.add_child(icon);
+        header.add_child(title);
+        header.add_child(closeBtn);
+        this._identityDialog.add_child(header);
+
+        // Content
+        const contentBox = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+        
+        info.forEach(line => {
+            const parts = line.split(': ');
+            const label = parts[0];
+            const val = parts.slice(1).join(': ');
+            
+            const row = new St.BoxLayout({ style: 'padding: 4px 0;' });
+            row.add_child(new St.Label({ text: `${label}: `, style: 'font-weight: bold; opacity: 0.7; min-width: 80px;' }));
+            
+            const valLabel = new St.Label({ 
+                text: val, 
+                style: 'font-family: monospace;',
+            });
+            // Wrapping logic
+            valLabel.clutter_text.line_wrap = true;
+            valLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+            
+            row.add_child(valLabel);
+            contentBox.add_child(row);
+        });
+        
+        this._identityDialog.add_child(contentBox);
+
+        // Action Bar
+        const actionBox = new St.BoxLayout({ style: 'padding-top: 16px; spacing: 12px;', x_align: Clutter.ActorAlign.END });
+        
+        const copyBtn = new St.Button({
+            label: 'Copy Info',
+            style_class: 'button',
+            style: 'padding: 4px 12px;'
+        });
+        
+        copyBtn.connect('clicked', () => {
+            St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, fullTextToCopy);
+            copyBtn.label = 'Copied!';
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                if (copyBtn) copyBtn.label = 'Copy Info';
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+
+        actionBox.add_child(copyBtn);
+        this._identityDialog.add_child(actionBox);
+
+        // Add to Shell
+        Main.layoutManager.addChrome(this._identityDialog, { trackFullscreen: true });
+
+        // Center on Screen
+        const monitor = Main.layoutManager.primaryMonitor;
+        this._identityDialog.width = 400; // Constrain width
+        const x = monitor.x + (monitor.width - 400) / 2;
+        const y = monitor.y + (monitor.height - this._identityDialog.height) / 2;
+        this._identityDialog.set_position(x, y);
+
+        // Make Draggable
+        let dragging = false;
+        let dragOffset = [0, 0];
+
+        // Dragging Logic on the Dialog itself (or header)
+        this._identityDialog.connect('button-press-event', (actor, event) => {
+            dragging = true;
+            const [ex, ey] = event.get_coords();
+            dragOffset = [ex - actor.x, ey - actor.y];
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+        this._identityDialog.connect('button-release-event', () => {
+            dragging = false;
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+        this._identityDialog.connect('motion-event', (actor, event) => {
+            if (dragging) {
+                const [ex, ey] = event.get_coords();
+                actor.set_position(ex - dragOffset[0], ey - dragOffset[1]);
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+        // Key Press (Escape to close)
+        this._identityDialog.connect('key-press-event', (actor, event) => {
+            const symbol = event.get_key_symbol();
+            if (symbol === Clutter.KEY_Escape) {
+                this._identityDialog.destroy();
+                this._identityDialog = null;
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+        
+        // Grab focus so ESC key works immediately
+        this._identityDialog.grab_key_focus();
+    }
+
+    /**
+     * Resolves the AppStream URI by attempting to fix common ID quirks
+     * (e.g. Snap duplicates like 'firefox_firefox').
+     */
+    _resolveAppStoreId(appId) {
+        let id = appId.replace(/\.desktop$/i, '');
+        const snapIdPattern = /^([^_]+)_\1$/.test(id);
+
+
+        // Snap duplicate cleanup
+        // Snap strict mode quirks (e.g. firefox_firefox -> firefox)
+        if (snapIdPattern) {
+            log(`Lesion: checking ${id} for snap duplicate pattern`);
+            id = id.split('_')[0];
+        }
+
+        // Cache map generation
+        if (!this._appStreamMap) {
+            this._appStreamMap = this._buildAppStreamMap();
+        }
+
+        // Lookup: Try exact ID first, then lowercase ID (often fixes casing mismatches)
+        const map = this._appStreamMap;
+        const mappedId = map[id] || map[id.toLowerCase()];
+
+        log(`Lesion: AppStream canonical match → ${id} → ${mappedId} → ${appId}`);
+        if (mappedId) {
+            return `appstream://${mappedId}`;
+        } else if (snapIdPattern) {
+            return `appstream://${id}`;
+        }
+        
+        // FIX: Default fallback should be the cleaned 'id' (no .desktop), not 'appId'
+        return `appstream://${appId}`;
+    }
+    
+    _buildAppStreamMap() {
+        // Cache map generation
+        if (this._appStreamMap) {
+            return this._appStreamMap;
+        }
+
+        const CANONICAL_APPS = {
+            // Browsers
+            chrome: {
+                target: 'google-chrome-stable',
+                ids: ['google-chrome', 'google-chrome-stable', 'com.google.Chrome']
+            },
+            firefox: {
+                target: 'org.mozilla.firefox',
+                ids: ['firefox', 'firefox_firefox', 'org.mozilla.firefox']
+            },
+            chromium: {
+                target: 'org.chromium.Chromium',
+                ids: ['chromium', 'chromium_chromium', 'org.chromium.Chromium']
+            },
+            edge: {
+                target: 'microsoft-edge-stable',
+                ids: ['microsoft-edge', 'com.microsoft.Edge']
+            },
+            
+            // Dev Tools
+            vscode: {
+                target: 'code', 
+                ids: ['code', 'code_code', 'com.visualstudio.code']
+            },
+            
+            // GNOME Core (Legacy mapping) - UNCOMMENTED TO FIX ISSUES
+            // terminal: {
+            //     target: 'org.gnome.Terminal',
+            //     ids: ['gnome-terminal', 'org.gnome.Terminal'] 
+            // },
+            // files: {
+            //     target: 'org.gnome.Nautilus',
+            //     ids: ['nautilus', 'org.gnome.Nautilus', 'org.gnome.nautilus']
+            // },
+            // software: {
+            //     target: 'org.gnome.Software',
+            //     ids: ['gnome-software', 'org.gnome.Software']
+            // }
+        };
+
+        this._appStreamMap = Object.create(null);
+
+        for (const key in CANONICAL_APPS) {
+            const { target, ids } = CANONICAL_APPS[key];
+            for (const id of ids) {
+                this._appStreamMap[id] = target;
+                this._appStreamMap[id.toLowerCase()] = target; // Populate lowercase keys for easier lookup
+            }
+        }
+
+        return this._appStreamMap;
     }
 
     _confirmEmptyTrash() {
