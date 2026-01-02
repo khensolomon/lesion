@@ -21,8 +21,9 @@ MODES OF OPERATION
      ~/.local/share/gnome-shell/extensions/<uuid>.
    - Compiles GSettings schemas:
      a) Locally in the extension folder (for self-containment).
-     b) Globally in ~/.local/share/glib-2.0/schemas (so settings apply immediately
-        without needing a logout/login cycle for schemas to load).
+     b) Globally in ~/.local/share/glib-2.0/schemas. 
+        CRITICAL: This allows settings to work immediately upon Shell restart
+        (Alt+F2 -> r) without needing a full logout/login.
    - Utility: Can reset GSettings keys to defaults via --reset-settings.
 
 3. Remote Mode (--mode remote):
@@ -249,30 +250,41 @@ def install_local(args, target_base):
         print("Created symlink.")
 
     # 2. Schemas
-    schema_id = args.schema or metadata.get("settings-schema")
-    if schema_id:
-        # Global compile (for dev convenience)
-        schema_file = f"{schema_id}.gschema.xml"
-        src_schema = os.path.join(src_dir, "schemas", schema_file)
+    # We copy ALL .gschema.xml files found in src/schemas to global schemas dir
+    # This prevents issues where filename != schema_id
+    local_schemas_dir = os.path.join(src_dir, "schemas")
+    has_global_schemas = False
+    
+    if os.path.isdir(local_schemas_dir):
+        os.makedirs(global_schemas_dir, exist_ok=True)
+        files_found = 0
         
-        if os.path.isfile(src_schema):
-            os.makedirs(global_schemas_dir, exist_ok=True)
-            shutil.copy(src_schema, global_schemas_dir)
+        for f in os.listdir(local_schemas_dir):
+            if f.endswith(".gschema.xml"):
+                src_file = os.path.join(local_schemas_dir, f)
+                shutil.copy(src_file, global_schemas_dir)
+                files_found += 1
+        
+        if files_found > 0:
             try:
                 subprocess.run(["glib-compile-schemas", global_schemas_dir], check=True)
-                print(f"Compiled global schemas in {global_schemas_dir}")
+                print(f"Compiled {files_found} global schema(s) in {global_schemas_dir}")
+                has_global_schemas = True
             except subprocess.CalledProcessError:
                 print("Warning: Failed to compile global schemas.")
         
-        # Local compile (ensure extension folder is self-contained)
-        local_schemas_dir = os.path.join(src_dir, "schemas")
-        if os.path.isdir(local_schemas_dir):
-             subprocess.run(["glib-compile-schemas", local_schemas_dir], check=False)
+        # Also compile locally (best practice for distribution)
+        subprocess.run(["glib-compile-schemas", local_schemas_dir], check=False)
 
-        # 3. Reset Settings
-        if args.reset_settings:
+    # 3. Reset Settings
+    schema_id = args.schema or metadata.get("settings-schema")
+    if args.reset_settings:
+        if schema_id:
             print(f"Resetting settings for {schema_id}...")
+            # We must rely on the just-compiled schemas
             subprocess.run(["gsettings", "reset-recursively", schema_id])
+        else:
+            print("Warning: No 'settings-schema' in metadata.json. Cannot reset settings.")
 
     print("\nDev setup complete.")
     print("Restart GNOME Shell (Alt+F2 -> r) to apply.")
