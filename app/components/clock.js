@@ -232,7 +232,7 @@ export class ClockManager extends ExtensionComponent {
         this._customBox.visible = true;
 
         if (multiline) {
-            this._customBox.vertical = true;
+            this._customBox.set_vertical(true);
             this._dateLabel.opacity = 255;
 
             // Regex to find time pattern like HH:MM or H:MM, optionally with seconds or AM/PM
@@ -253,7 +253,7 @@ export class ClockManager extends ExtensionComponent {
             }
 
         } else {
-            this._customBox.vertical = false;
+            this._customBox.set_vertical(false);
             this._dateLabel.opacity = 0;
             this._dateLabel.text = ' ';
 
