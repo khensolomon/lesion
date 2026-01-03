@@ -19,15 +19,19 @@ MODES OF OPERATION
 2. Dev Mode (--mode dev):
    - Creates a symbolic link from the current directory (or --src) to
      ~/.local/share/gnome-shell/extensions/<uuid>.
-   - Compiles GSettings schemas globally in ~/.local/share/glib-2.0/schemas. 
-     CRITICAL: This allows settings to work immediately upon Shell restart
-     (Alt+F2 -> r) without needing a full logout/login.
+   - Compiles GSettings schemas:
+     a) Locally in the extension folder (for self-containment).
+     b) Globally in ~/.local/share/glib-2.0/schemas. 
+        CRITICAL: This allows settings to work immediately upon Shell restart
+        (Alt+F2 -> r) without needing a full logout/login.
+   - Utility: Can reset GSettings keys to defaults via --reset-settings.
 
 3. Remote Mode (--mode remote):
    - Downloads a specific tag/branch (default: master) from GitHub.
-   - Installs files (copy) to the extensions directory.
-   - NOW ALSO compiles schemas globally (just like Dev Mode) to fix 
-     "Preferences Error" issues.
+   - Extracts the archive to a temporary location.
+   - Copies (does NOT symlink) the files to the extensions directory.
+   - Compiles schemas locally only.
+   - Enables the extension using 'gnome-extensions enable'.
 
 --------------------------------------------------------------------------------
 USAGE EXAMPLES
@@ -37,9 +41,20 @@ USAGE EXAMPLES
   1. Setup environment (run from repo root):
      ./install.py
 
+  2. Reset extension settings to default:
+     ./install.py --reset-settings
+
   [End-User]
   1. Install latest master branch (one-liner):
      curl https://raw.githubusercontent.com/khensolomon/lesion/master/install.py | python3 -
+
+  2. Install a specific release tag:
+     ./install.py --ref v1.2.0
+
+  3. Install from a fork/different repo:
+     ./install.py --repo myuser/my-fork --ref feature-branch
+
+--------------------------------------------------------------------------------
 """
 
 import os
@@ -65,9 +80,13 @@ GREEN = "\033[92m"
 RESET = "\033[0m"
 
 def get_metadata_path(src_dir):
+    """Return the full path to metadata.json in the source directory."""
     return os.path.join(src_dir, "metadata.json")
 
 def load_metadata(src_dir):
+    """
+    Parse metadata.json from the source directory.
+    """
     path = get_metadata_path(src_dir)
     if not os.path.isfile(path):
         sys.exit(f"{RED}Error: metadata.json not found in {src_dir}{RESET}")
@@ -78,6 +97,7 @@ def load_metadata(src_dir):
         sys.exit(f"{RED}Error parsing metadata.json: {e}{RESET}")
 
 def run_cmd(cmd, check=False, quiet=False):
+    """Run a subprocess command safely."""
     stdout = subprocess.DEVNULL if quiet else None
     stderr = subprocess.DEVNULL if quiet else None
     try:
@@ -87,10 +107,14 @@ def run_cmd(cmd, check=False, quiet=False):
         return False
 
 def get_schema_ids_from_file(xml_path):
+    """
+    Extracts schema IDs from a .gschema.xml file to validate against metadata.
+    """
     ids = []
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
+        # Handle both <schema> and <schemalist><schema>...
         if root.tag == 'schema':
              if 'id' in root.attrib: ids.append(root.attrib['id'])
         else:
@@ -98,74 +122,8 @@ def get_schema_ids_from_file(xml_path):
                 if 'id' in schema.attrib:
                     ids.append(schema.attrib['id'])
     except Exception:
-        pass
+        pass # internal validation will fail later if file is invalid
     return ids
-
-def install_schemas(src_schemas_dir):
-    """
-    Compiles schemas locally AND installs them globally to user's local share.
-    Returns a list of Schema IDs found in the files.
-    """
-    found_ids = []
-    global_schemas_dir = os.path.expanduser("~/.local/share/glib-2.0/schemas")
-    
-    if os.path.isdir(src_schemas_dir):
-        # 1. Global Install (for immediate effect and stability)
-        os.makedirs(global_schemas_dir, exist_ok=True)
-        files_found = 0
-        
-        for f in os.listdir(src_schemas_dir):
-            if f.endswith(".gschema.xml"):
-                src_file = os.path.join(src_schemas_dir, f)
-                found_ids.extend(get_schema_ids_from_file(src_file))
-                shutil.copy(src_file, global_schemas_dir)
-                files_found += 1
-        
-        if files_found > 0:
-            try:
-                subprocess.run(["glib-compile-schemas", global_schemas_dir], check=True)
-                print(f"Compiled {files_found} global schema(s) in {global_schemas_dir}")
-            except subprocess.CalledProcessError:
-                print(f"{RED}Warning: Failed to compile global schemas.{RESET}")
-        
-        # 2. Local Compile (for portability/standard compliance)
-        subprocess.run(["glib-compile-schemas", src_schemas_dir], check=False)
-        print("Compiled schemas locally.")
-    
-    return found_ids
-
-def run_diagnostics(target_schema_id, found_ids):
-    """Checks if the system can actually see the schema."""
-    if not target_schema_id:
-        return
-
-    # A. Check Consistency
-    if target_schema_id not in found_ids:
-        print(f"\n{RED}!!! CONFIGURATION ERROR DETECTED !!!{RESET}")
-        print(f"{YELLOW}metadata.json asks for schema: '{target_schema_id}'{RESET}")
-        print(f"{YELLOW}But your XML files only defined: {found_ids}{RESET}")
-        print(f"-> Please open schemas/*.gschema.xml and ensure <schema id=\"{target_schema_id}\" ...>")
-        return
-
-    print(f"{GREEN}✓ Schema ID '{target_schema_id}' found in XML files.{RESET}")
-
-    # B. Check System Registry
-    print(f"Verifying system registry...")
-    proc = subprocess.run(
-        ["gsettings", "list-keys", target_schema_id], 
-        stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE, 
-        text=True
-    )
-    
-    if proc.returncode == 0:
-            print(f"{GREEN}✓ System successfully sees schema '{target_schema_id}'.{RESET}")
-    else:
-            print(f"\n{RED}X System cannot find schema '{target_schema_id}' yet.{RESET}")
-            print(f"{YELLOW}Diagnosed Cause:{RESET}")
-            print(f"The XML file is installed, but the desktop session hasn't loaded it.")
-            print(f"{YELLOW}Solution:{RESET}")
-            print(f"You MUST log out and log back in to fix the Preferences window.")
 
 def get_archive_url(repo, ref):
     if ref.startswith("v"):
@@ -220,21 +178,16 @@ def install_remote(args, target_base):
         shutil.copytree(src_dir, dest_dir)
         print(f"Installed to: {dest_dir}")
 
-        # --- UNIFIED SCHEMA LOGIC ---
-        # We now compile global schemas even for remote installs to fix Prefs errors
         schemas_dir = os.path.join(dest_dir, "schemas")
-        found_ids = install_schemas(schemas_dir)
+        if os.path.isdir(schemas_dir) and run_cmd(["which", "glib-compile-schemas"], quiet=True):
+            run_cmd(["glib-compile-schemas", schemas_dir])
+            print("Compiled schemas locally.")
 
-        # Enable
         if run_cmd(["which", "gnome-extensions"], quiet=True):
             run_cmd(["gnome-extensions", "enable", uuid])
             print("Extension enabled via gnome-extensions.")
         
-        # Check
-        target_schema_id = metadata.get("settings-schema")
-        run_diagnostics(target_schema_id, found_ids)
-        
-        print("\nDone! If the extension doesn't appear, log out and back in.")
+        print("\nDone! If it doesn't appear, log out and back in.")
 
 def install_local(args, target_base):
     """Symlinks the current directory for development (Dev Mode)."""
@@ -248,6 +201,7 @@ def install_local(args, target_base):
         sys.exit(f"{RED}Error: UUID not found in metadata.json{RESET}")
 
     dest_dir = os.path.join(target_base, uuid)
+    global_schemas_dir = os.path.expanduser("~/.local/share/glib-2.0/schemas")
 
     print(f"--- Dev Install Mode ---")
     print(f"UUID: {uuid}")
@@ -267,12 +221,64 @@ def install_local(args, target_base):
         os.symlink(src_dir, dest_dir)
         print("Created symlink.")
 
-    # 2. Schemas (Unified)
+    # 2. Schemas
     local_schemas_dir = os.path.join(src_dir, "schemas")
-    found_ids = install_schemas(local_schemas_dir)
+    found_schema_ids = []
 
-    # 3. Diagnostics
-    run_diagnostics(target_schema_id, found_ids)
+    if os.path.isdir(local_schemas_dir):
+        os.makedirs(global_schemas_dir, exist_ok=True)
+        files_found = 0
+        
+        for f in os.listdir(local_schemas_dir):
+            if f.endswith(".gschema.xml"):
+                src_file = os.path.join(local_schemas_dir, f)
+                
+                # Check IDs inside the file
+                found_schema_ids.extend(get_schema_ids_from_file(src_file))
+                
+                # Copy to global
+                shutil.copy(src_file, global_schemas_dir)
+                files_found += 1
+        
+        if files_found > 0:
+            try:
+                subprocess.run(["glib-compile-schemas", global_schemas_dir], check=True)
+                print(f"Compiled {files_found} global schema(s) in {global_schemas_dir}")
+            except subprocess.CalledProcessError:
+                print(f"{RED}Warning: Failed to compile global schemas.{RESET}")
+        
+        subprocess.run(["glib-compile-schemas", local_schemas_dir], check=False)
+
+    # 3. DIAGNOSTICS & SYSTEM REGISTRY CHECK
+    if target_schema_id:
+        # Step A: Check if XML matches Metadata
+        if target_schema_id not in found_schema_ids:
+            print(f"\n{RED}!!! CONFIGURATION ERROR DETECTED !!!{RESET}")
+            print(f"{YELLOW}metadata.json asks for schema: '{target_schema_id}'{RESET}")
+            print(f"{YELLOW}But your XML files only defined: {found_schema_ids}{RESET}")
+            print(f"-> Please open schemas/*.gschema.xml and ensure <schema id=\"{target_schema_id}\" ...>")
+            print(f"-> Without this match, the Preferences window will CRASH.\n")
+        else:
+            print(f"{GREEN}✓ Schema ID '{target_schema_id}' found in XML files.{RESET}")
+
+        # Step B: Check if System can actually see it
+        # We use 'gsettings list-keys' to probe the live registry.
+        print(f"Verifying system registry...")
+        proc = subprocess.run(
+            ["gsettings", "list-keys", target_schema_id], 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+        
+        if proc.returncode == 0:
+             print(f"{GREEN}✓ System successfully sees schema '{target_schema_id}'.{RESET}")
+        else:
+             print(f"\n{RED}X System cannot find schema '{target_schema_id}' yet.{RESET}")
+             print(f"{YELLOW}Diagnosed Cause:{RESET}")
+             print(f"The XML file is installed, but the desktop session hasn't loaded it.")
+             print(f"{YELLOW}Solution:{RESET}")
+             print(f"You MUST log out and log back in to fix the Preferences window.")
 
     # 4. Reset Settings
     if args.reset_settings:
