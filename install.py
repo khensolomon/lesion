@@ -67,10 +67,17 @@ import tarfile
 import tempfile
 import urllib.request
 import textwrap
+import xml.etree.ElementTree as ET
 
 # --- Configuration ---
 DEFAULT_REPO = "khensolomon/lesion"
 DEFAULT_REF = "master"
+
+# Colors for diagnostics
+RED = "\033[91m"
+YELLOW = "\033[93m"
+GREEN = "\033[92m"
+RESET = "\033[0m"
 
 def get_metadata_path(src_dir):
     """Return the full path to metadata.json in the source directory."""
@@ -79,37 +86,18 @@ def get_metadata_path(src_dir):
 def load_metadata(src_dir):
     """
     Parse metadata.json from the source directory.
-    
-    Args:
-        src_dir (str): Directory containing metadata.json.
-        
-    Returns:
-        dict: The parsed JSON content.
-        
-    Raises:
-        SystemExit: If file is missing or invalid JSON.
     """
     path = get_metadata_path(src_dir)
     if not os.path.isfile(path):
-        sys.exit(f"Error: metadata.json not found in {src_dir}")
+        sys.exit(f"{RED}Error: metadata.json not found in {src_dir}{RESET}")
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        sys.exit(f"Error parsing metadata.json: {e}")
+        sys.exit(f"{RED}Error parsing metadata.json: {e}{RESET}")
 
 def run_cmd(cmd, check=False, quiet=False):
-    """
-    Run a subprocess command safely with optional output suppression.
-    
-    Args:
-        cmd (list): Command to run (e.g. ['ls', '-la']).
-        check (bool): If True, raises CalledProcessError on failure.
-        quiet (bool): If True, suppresses stdout/stderr.
-        
-    Returns:
-        bool: True if command succeeded (exit code 0), False otherwise.
-    """
+    """Run a subprocess command safely."""
     stdout = subprocess.DEVNULL if quiet else None
     stderr = subprocess.DEVNULL if quiet else None
     try:
@@ -118,33 +106,32 @@ def run_cmd(cmd, check=False, quiet=False):
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
 
+def get_schema_ids_from_file(xml_path):
+    """
+    Extracts schema IDs from a .gschema.xml file to validate against metadata.
+    """
+    ids = []
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        # Handle both <schema> and <schemalist><schema>...
+        if root.tag == 'schema':
+             if 'id' in root.attrib: ids.append(root.attrib['id'])
+        else:
+            for schema in root.findall(".//schema"):
+                if 'id' in schema.attrib:
+                    ids.append(schema.attrib['id'])
+    except Exception:
+        pass # internal validation will fail later if file is invalid
+    return ids
+
 def get_archive_url(repo, ref):
-    """
-    Generate GitHub archive URL for a specific repo and reference.
-    
-    Args:
-        repo (str): "user/repo" format.
-        ref (str): Tag (e.g., "v1.0") or branch name (e.g., "master").
-        
-    Returns:
-        str: URL to the .tar.gz archive.
-    """
     if ref.startswith("v"):
         return f"https://github.com/{repo}/archive/refs/tags/{ref}.tar.gz"
     return f"https://github.com/{repo}/archive/refs/heads/{ref}.tar.gz"
 
 def install_remote(args, target_base):
-    """
-    Downloads and installs the extension from GitHub (User Mode).
-    
-    Steps:
-    1. Downloads .tar.gz from GitHub.
-    2. Extracts to temp dir.
-    3. Reads metadata to get UUID.
-    4. Copies files to ~/.local/share/gnome-shell/extensions/<uuid>.
-    5. Compiles schemas locally.
-    6. Enables extension.
-    """
+    """Downloads and installs the extension from GitHub (User Mode)."""
     repo = args.repo or DEFAULT_REPO
     ref = args.ref or DEFAULT_REF
     url = get_archive_url(repo, ref)
@@ -155,53 +142,47 @@ def install_remote(args, target_base):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         archive_path = os.path.join(tmpdir, "source.tar.gz")
-        
         try:
             urllib.request.urlretrieve(url, archive_path)
         except Exception as e:
-            sys.exit(f"Download failed: {e}")
+            sys.exit(f"{RED}Download failed: {e}{RESET}")
 
         try:
             with tarfile.open(archive_path, "r:gz") as tar:
                 tar.extractall(tmpdir)
         except Exception as e:
-            sys.exit(f"Extraction failed: {e}")
+            sys.exit(f"{RED}Extraction failed: {e}{RESET}")
 
-        # Find the extracted folder (GitHub tarballs usually contain one top-level folder)
         extracted_items = [
             os.path.join(tmpdir, d) for d in os.listdir(tmpdir)
             if os.path.isdir(os.path.join(tmpdir, d))
         ]
         if not extracted_items:
-            sys.exit("Error: Archive contained no directories.")
+            sys.exit(f"{RED}Error: Archive contained no directories.{RESET}")
         
         src_dir = extracted_items[0]
         metadata = load_metadata(src_dir)
         uuid = metadata.get("uuid")
         if not uuid:
-            sys.exit("Error: UUID missing in downloaded metadata.json")
+            sys.exit(f"{RED}Error: UUID missing in downloaded metadata.json{RESET}")
 
         dest_dir = os.path.join(target_base, uuid)
         
-        # Cleanup old installation
         if os.path.exists(dest_dir):
             if os.path.islink(dest_dir):
                 os.unlink(dest_dir)
             else:
                 shutil.rmtree(dest_dir)
 
-        # Install
         os.makedirs(target_base, exist_ok=True)
         shutil.copytree(src_dir, dest_dir)
         print(f"Installed to: {dest_dir}")
 
-        # Local Schema Compilation
         schemas_dir = os.path.join(dest_dir, "schemas")
         if os.path.isdir(schemas_dir) and run_cmd(["which", "glib-compile-schemas"], quiet=True):
             run_cmd(["glib-compile-schemas", schemas_dir])
             print("Compiled schemas locally.")
 
-        # Enable Extension
         if run_cmd(["which", "gnome-extensions"], quiet=True):
             run_cmd(["gnome-extensions", "enable", uuid])
             print("Extension enabled via gnome-extensions.")
@@ -209,24 +190,15 @@ def install_remote(args, target_base):
         print("\nDone! If it doesn't appear, log out and back in.")
 
 def install_local(args, target_base):
-    """
-    Symlinks the current directory for development (Dev Mode).
-    
-    Why Symlink?
-    Changes to .js files are reflected immediately upon GNOME Shell restart (Alt+F2 -> r)
-    without needing to reinstall/copy files every time.
-    
-    Why Global Schemas?
-    GNOME Shell only reads local schemas (inside the extension folder) after a full
-    login/logout. For rapid dev, we compile schemas to the global user path
-    (~/.local/share/glib-2.0/schemas) so changes apply on simple Shell restart.
-    """
+    """Symlinks the current directory for development (Dev Mode)."""
     src_dir = os.path.abspath(args.src) if args.src else os.getcwd()
     metadata = load_metadata(src_dir)
     
     uuid = args.uuid or metadata.get("uuid")
+    target_schema_id = args.schema or metadata.get("settings-schema")
+
     if not uuid:
-        sys.exit("Error: UUID not found in metadata.json")
+        sys.exit(f"{RED}Error: UUID not found in metadata.json{RESET}")
 
     dest_dir = os.path.join(target_base, uuid)
     global_schemas_dir = os.path.expanduser("~/.local/share/glib-2.0/schemas")
@@ -244,17 +216,15 @@ def install_local(args, target_base):
             os.symlink(src_dir, dest_dir)
             print("Updated existing symlink.")
     elif os.path.exists(dest_dir):
-        sys.exit(f"Error: Target {dest_dir} exists and is not a symlink. Remove it manually.")
+        sys.exit(f"{RED}Error: Target {dest_dir} exists and is not a symlink. Remove it manually.{RESET}")
     else:
         os.symlink(src_dir, dest_dir)
         print("Created symlink.")
 
     # 2. Schemas
-    # We copy ALL .gschema.xml files found in src/schemas to global schemas dir
-    # This prevents issues where filename != schema_id
     local_schemas_dir = os.path.join(src_dir, "schemas")
-    has_global_schemas = False
-    
+    found_schema_ids = []
+
     if os.path.isdir(local_schemas_dir):
         os.makedirs(global_schemas_dir, exist_ok=True)
         files_found = 0
@@ -262,6 +232,11 @@ def install_local(args, target_base):
         for f in os.listdir(local_schemas_dir):
             if f.endswith(".gschema.xml"):
                 src_file = os.path.join(local_schemas_dir, f)
+                
+                # Check IDs inside the file
+                found_schema_ids.extend(get_schema_ids_from_file(src_file))
+                
+                # Copy to global
                 shutil.copy(src_file, global_schemas_dir)
                 files_found += 1
         
@@ -269,22 +244,29 @@ def install_local(args, target_base):
             try:
                 subprocess.run(["glib-compile-schemas", global_schemas_dir], check=True)
                 print(f"Compiled {files_found} global schema(s) in {global_schemas_dir}")
-                has_global_schemas = True
             except subprocess.CalledProcessError:
-                print("Warning: Failed to compile global schemas.")
+                print(f"{RED}Warning: Failed to compile global schemas.{RESET}")
         
-        # Also compile locally (best practice for distribution)
         subprocess.run(["glib-compile-schemas", local_schemas_dir], check=False)
 
-    # 3. Reset Settings
-    schema_id = args.schema or metadata.get("settings-schema")
-    if args.reset_settings:
-        if schema_id:
-            print(f"Resetting settings for {schema_id}...")
-            # We must rely on the just-compiled schemas
-            subprocess.run(["gsettings", "reset-recursively", schema_id])
+    # 3. DIAGNOSTICS CHECK
+    if target_schema_id:
+        if target_schema_id not in found_schema_ids:
+            print(f"\n{RED}!!! CONFIGURATION ERROR DETECTED !!!{RESET}")
+            print(f"{YELLOW}metadata.json asks for schema: '{target_schema_id}'{RESET}")
+            print(f"{YELLOW}But your XML files only defined: {found_schema_ids}{RESET}")
+            print(f"-> Please open schemas/*.gschema.xml and ensure <schema id=\"{target_schema_id}\" ...>")
+            print(f"-> Without this match, you will see 'GSettings schema not found' errors.\n")
         else:
-            print("Warning: No 'settings-schema' in metadata.json. Cannot reset settings.")
+            print(f"{GREEN}✓ Schema ID '{target_schema_id}' found in XML files.{RESET}")
+
+    # 4. Reset Settings
+    if args.reset_settings:
+        if target_schema_id:
+            print(f"Resetting settings for {target_schema_id}...")
+            subprocess.run(["gsettings", "reset-recursively", target_schema_id])
+        else:
+            print(f"{YELLOW}Warning: No 'settings-schema' in metadata.json. Cannot reset settings.{RESET}")
 
     print("\nDev setup complete.")
     print("Restart GNOME Shell (Alt+F2 -> r) to apply.")
@@ -324,10 +306,8 @@ def main():
     
     extensions_path = os.path.expanduser("~/.local/share/gnome-shell/extensions")
 
-    # Mode Detection Logic
     mode = args.mode
     if mode == "auto":
-        # If metadata.json exists in CWD or --src is provided, assume Dev
         has_local_meta = os.path.isfile("metadata.json") or (args.src and os.path.isfile(os.path.join(args.src, "metadata.json")))
         mode = "dev" if has_local_meta else "remote"
 
