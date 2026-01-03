@@ -80,7 +80,10 @@ export class ClockManager extends ExtensionComponent {
         });
 
         // Sync 'active' state with the menu visibility
-        this._dateMenu.menu.connect('open-state-changed', (menu, isOpen) => {
+        // We store the signal ID to disconnect it later, and guard against null access
+        this._menuSignal = this._dateMenu.menu.connect('open-state-changed', (menu, isOpen) => {
+            if (!this._customBox) return;
+            
             if (isOpen) {
                 this._customBox.add_style_pseudo_class('active');
             } else {
@@ -288,6 +291,12 @@ export class ClockManager extends ExtensionComponent {
     _restore() {
         this._restorePos();
         
+        // Clean up the menu state signal
+        if (this._dateMenu && this._menuSignal) {
+            this._dateMenu.menu.disconnect(this._menuSignal);
+            this._menuSignal = null;
+        }
+
         if (this._originalClockDisplay) {
             if (this._clockSignal) {
                 this._originalClockDisplay.disconnect(this._clockSignal);
