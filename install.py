@@ -167,6 +167,25 @@ def run_diagnostics(target_schema_id, found_ids):
             print(f"{YELLOW}Solution:{RESET}")
             print(f"You MUST log out and log back in to fix the Preferences window.")
 
+def reset_settings_logic(schema_id):
+    """Attempts to reset settings for the given schema ID."""
+    if not schema_id:
+        print(f"{YELLOW}Warning: No 'settings-schema' in metadata.json. Cannot reset settings.{RESET}")
+        return
+
+    print(f"Resetting settings for {schema_id}...")
+    
+    # Check if schema is visible first
+    if not run_cmd(["gsettings", "list-keys", schema_id], quiet=True):
+        print(f"{RED}Error: Schema '{schema_id}' is not visible to gsettings.{RESET}")
+        print(f"We tried compiling it globally, but it's not showing up. Try logging out/in.")
+        return
+
+    if run_cmd(["gsettings", "reset-recursively", schema_id]):
+        print(f"{GREEN}✓ Settings reset to default.{RESET}")
+    else:
+        print(f"{RED}Error: Failed to execute gsettings reset.{RESET}")
+
 def get_archive_url(repo, ref):
     if ref.startswith("v"):
         return f"https://github.com/{repo}/archive/refs/tags/{ref}.tar.gz"
@@ -221,7 +240,6 @@ def install_remote(args, target_base):
         print(f"Installed to: {dest_dir}")
 
         # --- UNIFIED SCHEMA LOGIC ---
-        # We now compile global schemas even for remote installs to fix Prefs errors
         schemas_dir = os.path.join(dest_dir, "schemas")
         found_ids = install_schemas(schemas_dir)
 
@@ -233,6 +251,10 @@ def install_remote(args, target_base):
         # Check
         target_schema_id = metadata.get("settings-schema")
         run_diagnostics(target_schema_id, found_ids)
+        
+        # Support Reset in Remote Mode too
+        if args.reset_settings:
+            reset_settings_logic(target_schema_id)
         
         print("\nDone! If the extension doesn't appear, log out and back in.")
 
@@ -254,33 +276,37 @@ def install_local(args, target_base):
     print(f"Source: {src_dir}")
     print(f"Destination: {dest_dir}")
 
-    # 1. Symlink
+    # 1. Schemas (Do this FIRST so reset works)
+    local_schemas_dir = os.path.join(src_dir, "schemas")
+    found_ids = install_schemas(local_schemas_dir)
+
+    # 2. Reset Settings (Do this BEFORE symlink check)
+    if args.reset_settings:
+        reset_settings_logic(target_schema_id)
+
+    # 3. Symlink Logic
+    # We relax the symlink check if we just reset settings or if the user wants to keep a folder
     os.makedirs(target_base, exist_ok=True)
+    
     if os.path.islink(dest_dir):
         if os.readlink(dest_dir) != src_dir:
             os.unlink(dest_dir)
             os.symlink(src_dir, dest_dir)
             print("Updated existing symlink.")
+        else:
+            print("Symlink already correct.")
     elif os.path.exists(dest_dir):
-        sys.exit(f"{RED}Error: Target {dest_dir} exists and is not a symlink. Remove it manually.{RESET}")
+        # IMPROVEMENT: Don't crash if it's a directory, just warn.
+        # This allows --reset-settings to work even on directory installs.
+        print(f"{YELLOW}Warning: Target {dest_dir} exists and is NOT a symlink (it's a directory).{RESET}")
+        print(f"{YELLOW}Skipping symlink creation to avoid data loss.{RESET}")
+        print(f"If you want to switch to symlink mode, manually delete the folder and run this again.")
     else:
         os.symlink(src_dir, dest_dir)
         print("Created symlink.")
 
-    # 2. Schemas (Unified)
-    local_schemas_dir = os.path.join(src_dir, "schemas")
-    found_ids = install_schemas(local_schemas_dir)
-
-    # 3. Diagnostics
+    # 4. Diagnostics
     run_diagnostics(target_schema_id, found_ids)
-
-    # 4. Reset Settings
-    if args.reset_settings:
-        if target_schema_id:
-            print(f"Resetting settings for {target_schema_id}...")
-            subprocess.run(["gsettings", "reset-recursively", target_schema_id])
-        else:
-            print(f"{YELLOW}Warning: No 'settings-schema' in metadata.json. Cannot reset settings.{RESET}")
 
     print("\nDev setup complete.")
     print("If this is your first install, restart GNOME Shell (Alt+F2 -> r).")
@@ -310,7 +336,7 @@ def main():
     parser.add_argument("--src", help="Source directory (Dev mode only)")
     parser.add_argument("--uuid", help="Override UUID (Dev mode only)")
     parser.add_argument("--schema", help="Override schema ID (Dev mode only)")
-    parser.add_argument("--reset-settings", action="store_true", help="Reset GSettings to defaults (Dev mode only)")
+    parser.add_argument("--reset-settings", action="store_true", help="Reset GSettings to defaults")
     
     # Remote options
     parser.add_argument("--ref", help=f"Git reference/tag to install (default: {DEFAULT_REF})")
