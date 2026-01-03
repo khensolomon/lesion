@@ -249,16 +249,36 @@ def install_local(args, target_base):
         
         subprocess.run(["glib-compile-schemas", local_schemas_dir], check=False)
 
-    # 3. DIAGNOSTICS CHECK
+    # 3. DIAGNOSTICS & SYSTEM REGISTRY CHECK
     if target_schema_id:
+        # Step A: Check if XML matches Metadata
         if target_schema_id not in found_schema_ids:
             print(f"\n{RED}!!! CONFIGURATION ERROR DETECTED !!!{RESET}")
             print(f"{YELLOW}metadata.json asks for schema: '{target_schema_id}'{RESET}")
             print(f"{YELLOW}But your XML files only defined: {found_schema_ids}{RESET}")
             print(f"-> Please open schemas/*.gschema.xml and ensure <schema id=\"{target_schema_id}\" ...>")
-            print(f"-> Without this match, you will see 'GSettings schema not found' errors.\n")
+            print(f"-> Without this match, the Preferences window will CRASH.\n")
         else:
             print(f"{GREEN}✓ Schema ID '{target_schema_id}' found in XML files.{RESET}")
+
+        # Step B: Check if System can actually see it
+        # We use 'gsettings list-keys' to probe the live registry.
+        print(f"Verifying system registry...")
+        proc = subprocess.run(
+            ["gsettings", "list-keys", target_schema_id], 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+        
+        if proc.returncode == 0:
+             print(f"{GREEN}✓ System successfully sees schema '{target_schema_id}'.{RESET}")
+        else:
+             print(f"\n{RED}X System cannot find schema '{target_schema_id}' yet.{RESET}")
+             print(f"{YELLOW}Diagnosed Cause:{RESET}")
+             print(f"The XML file is installed, but the desktop session hasn't loaded it.")
+             print(f"{YELLOW}Solution:{RESET}")
+             print(f"You MUST log out and log back in to fix the Preferences window.")
 
     # 4. Reset Settings
     if args.reset_settings:
@@ -269,7 +289,7 @@ def install_local(args, target_base):
             print(f"{YELLOW}Warning: No 'settings-schema' in metadata.json. Cannot reset settings.{RESET}")
 
     print("\nDev setup complete.")
-    print("Restart GNOME Shell (Alt+F2 -> r) to apply.")
+    print("If this is your first install, restart GNOME Shell (Alt+F2 -> r).")
 
 def main():
     parser = argparse.ArgumentParser(
