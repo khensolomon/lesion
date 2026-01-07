@@ -5,11 +5,10 @@
 } */
 
 
-.lesion-dock-container .show-apps-vertical-margin {
+/* .lesion-dock-container .show-apps-vertical-margin {
     margin: 8px 0;
 }
 .dash-separator {
-    /* Extra safety if needed */
     height: 0px !important;
 }
 
@@ -18,8 +17,6 @@
 }
 .overview-icon{
     background-color: green ;
-    /* border-radius: 0px; */
-    /* background-color: transparent;; */
     
 }
 .show-apps{
@@ -29,4 +26,51 @@
 
 .app-running-dot{
     background-color: red;
+} */
+
+
+
+
+#panel,
+#panel.solid {
+    /* background-gradient-direction: vertical;
+    background-gradient-start: rgba(27, 27, 27, 0.693);
+    background-gradient-end: rgba(0, 0, 0, 0.700); */
+    background-color: rgba(37, 37, 37, 0.76);
+box-shadow: 
+        inset 0 -1px 1px rgba(0, 0, 0, 0.4);
+
+}
+
+#panel .panel-button {
+
+  border-radius: 8px;
+  /* background-color: tomato; */
+
+  /* Default is often ~12px; lower for tighter spacing */
+  -natural-hpadding: 4px;
+  /* Minimum padding; set low to allow compactness */
+  -minimum-hpadding: 2px;
+
+  
+
+}
+#panel .panel-button.app {
+    -natural-hpadding: 10px;
+    -minimum-hpadding: 0px;
+}
+
+.keyboard-indicator {
+  background-color: red;
+}
+
+
+/* Rounded Windows */
+.window-frame {
+    border-radius: 5px  !important;          /* Works for St windows */
+    background-color: #2e2e2e  !important;   /* Solid background */
+}
+
+window {
+    border-radius: 5px !important;
 }

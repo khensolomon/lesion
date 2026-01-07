@@ -121,7 +121,7 @@
     -->
 
     <!-- Apps -->
-    <key name="apps-icon-size" type="i"><default>14</default></key>
+    <key name="apps-icon-size" type="i"><default>16</default></key>
     <key name="apps-icon-desaturate" type="b"><default>true</default></key>
     
     <!-- Opacity Customization -->

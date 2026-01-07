@@ -20,7 +20,8 @@ class AppPanelButtonBase extends PanelMenu.Button {
     _init(iconOrActor, name, clickCallback, menuCallback) {
         super._init(0.0, name);
         
-        this.style = 'min-width: 0px; margin: 0 2px; padding: 0 4px;'; 
+        // UPDATED: Removed margin as requested
+        this.style = 'min-width: 0px; padding: 0 4px;'; 
 
         this._box = new St.Widget({ 
             layout_manager: new Clutter.BinLayout(),
@@ -64,6 +65,7 @@ class AppPanelButtonBase extends PanelMenu.Button {
         this._role = null;
         this._app = null; 
         this._windows = [];
+        this._baseOpacity = 255; // Track intended state opacity
         
         // DND State
         this._isDraggable = false;
@@ -98,18 +100,14 @@ class AppPanelButtonBase extends PanelMenu.Button {
     _onHoverChanged() {
         if (this._dragged) return;
         
-        // Only animate scaling if it is an Icon
-        if (this.iconActor instanceof St.Icon) {
-            const scale = this.hover ? 1.15 : 1.0;
-            if (this.iconActor.opacity < 255 && !this.hover) return;
+        // UPDATED: Opacity 100 if hovered, duration 600
+        const targetOpacity = this.hover ? 100 : this._baseOpacity;
 
-            this.iconActor.ease({
-                scale_x: scale,
-                scale_y: scale,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD
-            });
-        }
+        this.iconActor.ease({
+            opacity: targetOpacity,
+            duration: 600, 
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD
+        });
     }
 
     enableDragging(onDragEndCallback) {
@@ -321,8 +319,14 @@ class AppPanelButtonBase extends PanelMenu.Button {
             if (!this.iconActor) return;
             if (this._dragged || !this.visible) return;
 
+            // Store the intended state opacity (e.g. 160 for stopped, 255 for running)
+            this._baseOpacity = opacity;
+
+            // If currently hovered, stay at 255, otherwise use the requested state opacity
+            const effectiveOpacity = this.hover ? 100 : this._baseOpacity;
+
             this.iconActor.ease({
-                opacity: opacity,
+                opacity: effectiveOpacity,
                 duration: 250,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD
             });
@@ -1142,7 +1146,7 @@ export class AppsManager extends ExtensionComponent {
         }
         
         // FIX: Default fallback should be the cleaned 'id' (no .desktop), not 'appId'
-        return `appstream://${appId}`;
+        return `appstream://${id}`;
     }
     
     _buildAppStreamMap() {
@@ -1177,18 +1181,18 @@ export class AppsManager extends ExtensionComponent {
             },
             
             // GNOME Core (Legacy mapping) - UNCOMMENTED TO FIX ISSUES
-            // terminal: {
-            //     target: 'org.gnome.Terminal',
-            //     ids: ['gnome-terminal', 'org.gnome.Terminal'] 
-            // },
-            // files: {
-            //     target: 'org.gnome.Nautilus',
-            //     ids: ['nautilus', 'org.gnome.Nautilus', 'org.gnome.nautilus']
-            // },
-            // software: {
-            //     target: 'org.gnome.Software',
-            //     ids: ['gnome-software', 'org.gnome.Software']
-            // }
+            terminal: {
+                target: 'org.gnome.Terminal',
+                ids: ['gnome-terminal', 'org.gnome.Terminal'] 
+            },
+            files: {
+                target: 'org.gnome.Nautilus',
+                ids: ['nautilus', 'org.gnome.Nautilus', 'org.gnome.nautilus']
+            },
+            software: {
+                target: 'org.gnome.Software',
+                ids: ['gnome-software', 'org.gnome.Software']
+            }
         };
 
         this._appStreamMap = Object.create(null);
@@ -1367,6 +1371,9 @@ export class AppsManager extends ExtensionComponent {
             }
         );
         
+        btn.add_style_class_name('panel-button');
+        btn.add_style_class_name('trash');
+
         const role = 'lesion-trash';
         btn._role = role;
         Main.panel.addToStatusArea(role, btn, idx, pos);
@@ -1426,6 +1433,9 @@ export class AppsManager extends ExtensionComponent {
                 }
             );
             
+            btn.add_style_class_name('panel-button');
+            btn.add_style_class_name('disk');
+
             const role = `lesion-disk-${i}`;
             btn._role = role;
             Main.panel.addToStatusArea(role, btn, idx + i, pos);
@@ -1505,6 +1515,9 @@ export class AppsManager extends ExtensionComponent {
             }
         );
 
+        btn.add_style_class_name('panel-button');
+        btn.add_style_class_name('show-apps');
+
         const role = 'lesion-showgrid';
         btn._role = role;
         Main.panel.addToStatusArea(role, btn, idx, pos);
@@ -1560,6 +1573,9 @@ export class AppsManager extends ExtensionComponent {
             }
         );
 
+        btn.add_style_class_name('panel-button');
+        btn.add_style_class_name('workspace');
+
         const role = 'lesion-overview';
         btn._role = role;
         Main.panel.addToStatusArea(role, btn, idx, pos);
@@ -1590,6 +1606,9 @@ export class AppsManager extends ExtensionComponent {
             
             btn.enableDragging(() => this._handleDragFinish());
             
+            btn.add_style_class_name('panel-button');
+            btn.add_style_class_name('app'); // Generic app class
+
             btn._app = app;
             const role = `lesion-fav-${i}`;
             btn._role = role;
@@ -1645,6 +1664,9 @@ export class AppsManager extends ExtensionComponent {
                 () => this._handleAppClick(app),
                 (menu) => this._buildContextAwareAppMenu(menu, app, app.get_id(), false)
             );
+
+            btn.add_style_class_name('panel-button');
+            btn.add_style_class_name('app');
 
             btn._app = app;
             const role = `lesion-run-${i}`;

@@ -19,11 +19,12 @@ Added
 - Remove the file from the management list.
 - Centralizing Configuration & logs
 
-[1-32] - 2025-12-31
+[21-32] - 2025-12-31
 
 Improve
 
 - apps
+- Replace the hover scaling animation with a smoother opacity transition.
 - corners code
 
 Remove
