@@ -5,6 +5,7 @@ import { createWallpaperUI } from "./wallpaper.js";
 import { createGeometryUI } from './geometry.js';
 import { createClockUI } from './clock.js';
 import { createAppsUI } from './apps.js';
+import { createPanelsUI } from "./panels.js";
 // import { createSettingUI } from "./setting.js";
 // import { createAppButtonUI } from './appbutton.js';
 // import { createCornersUI } from './corners.js';
@@ -125,10 +126,16 @@ export function getPages() {
         // },
         {
             id: 'apps',
-            title: 'Applications',
+            title: 'Apps',
             icon: 'open-menu-symbolic',
-            keywords: ['applications', 'grid', 'overview', 'launcher', 'menu'],
+            keywords: ['applications', 'apps', 'menu', 'grid', 'overview', 'launcher'],
             ui: createAppsUI
+        },
+        {
+            id: 'panel-design',
+            title: 'Design',
+            icon: 'view-app-grid-symbolic',
+            ui: createPanelsUI
         },
         // {
         //     id: 'mimic',

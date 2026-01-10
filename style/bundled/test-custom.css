@@ -65,12 +65,21 @@ box-shadow:
 }
 
 
-/* Rounded Windows */
-.window-frame {
-    border-radius: 5px  !important;          /* Works for St windows */
-    background-color: #2e2e2e  !important;   /* Solid background */
-}
 
-window {
-    border-radius: 5px !important;
+
+/* .popup-menu, .quick-settings, .popover, .aggregate-menu {
+    border-radius: 5px; 
 }
+.popup-menu {
+    background-color: red;
+} */
+
+/* .quick-toggle{
+    border-radius: 8px;
+    background-color: red;
+} */
+
+/* .popup-menu, .popover, .aggregate-menu {
+    border-radius: 8px !important;
+    background-color: blue;
+} */

@@ -35,20 +35,93 @@
     <value nick="bottom" value="2"/>
     <value nick="left" value="3"/>
   </enum>
+  
+  <!-- CSS Border Styles -->
+  <enum id="dev.lethil.lesion.BorderStyle">
+    <value nick="solid" value="0"/>
+    <value nick="dotted" value="1"/>
+    <value nick="dashed" value="2"/>
+    <value nick="double" value="3"/>
+    <value nick="groove" value="4"/>
+    <value nick="ridge" value="5"/>
+    <value nick="inset" value="6"/>
+    <value nick="outset" value="7"/>
+    <value nick="none" value="8"/>
+  </enum>
+  
+  <!-- Blend Modes -->
+  <enum id="dev.lethil.lesion.BlendMode">
+    <value nick="normal" value="0"/>
+    <value nick="multiply" value="1"/>
+    <value nick="screen" value="2"/>
+    <value nick="overlay" value="3"/>
+    <value nick="darken" value="4"/>
+    <value nick="lighten" value="5"/>
+    <value nick="color-dodge" value="6"/>
+    <value nick="color-burn" value="7"/>
+    <value nick="hard-light" value="8"/>
+    <value nick="soft-light" value="9"/>
+    <value nick="difference" value="10"/>
+    <value nick="exclusion" value="11"/>
+    <value nick="hue" value="12"/>
+    <value nick="saturation" value="13"/>
+    <value nick="color" value="14"/>
+    <value nick="luminosity" value="15"/>
+  </enum>
 
   <schema id="dev.lethil.lesion" path="/dev/lethil/lesion/">
+    <!-- WALLPAPER SECTION -->
+    <key name="wallpaper-enabled" type="b">
+        <default>true</default>
+        <summary>Master Switch: Enable Wallpaper Management</summary>
+    </key>
+    
+    <!-- Image Visibility -->
+    <key name="wallpaper-show-image" type="b">
+        <default>true</default>
+        <summary>Toggle the background picture on/off</summary>
+    </key>
+
+    <!-- Effects -->
+    <key name="wallpaper-monochrome" type="b">
+        <default>false</default>
+        <summary>Apply monochrome filter to background</summary>
+    </key>
+    <key name="wallpaper-blur-sigma" type="i">
+        <default>0</default>
+        <summary>Blur strength (sigma). 0 to disable.</summary>
+    </key>
+    <key name="wallpaper-brightness" type="d">
+        <default>1.0</default>
+        <summary>Brightness multiplier (0.0 to 1.0)</summary>
+    </key>
+
+    <!-- Custom Dark Mode Colors -->
+    <key name="wallpaper-primary-color-dark" type="s">
+        <default>'#000000'</default>
+        <summary>Primary color used in Dark Mode</summary>
+    </key>
+    <key name="wallpaper-secondary-color-dark" type="s">
+        <default>'#000000'</default>
+        <summary>Secondary color used in Dark Mode</summary>
+    </key>
+    
+    <!-- Store previous state for toggle -->
+    <key name="wallpaper-restore-options" type="s">
+        <default>'zoom'</default>
+        <summary>Internal: stores picture-options when disabled</summary>
+    </key>
+
     <!-- Enabled Bundled Styles -->
     <key name="enabled-styles" type="as">
       <default>[]</default>
       <summary>Enabled CSS file names</summary>
-      <description>List of CSS files in style/bundled/ that are currently applied.</description>
     </key>
 
     <!-- Custom User Styles -->
     <key name="custom-styles" type="a(sb)">
       <default>[]</default>
       <summary>User-added custom CSS files</summary>
-      <description>An array of tuples containing the file URI and its enabled state.</description>
     </key>
 
     <!-- Navigation -->
@@ -78,53 +151,19 @@
     </key>
 
     <!-- Clock -->
-    <key name="clock-move-enabled" type="b">
-      <default>true</default>
-      <summary>Move the Date Menu from center</summary>
-    </key>
-    <!-- Target Panel Side -->
-    <key name="clock-target" enum="dev.lethil.lesion.ClockTarget">
-      <default>'right'</default>
-      <summary>Which side of the panel to move the clock to</summary>
-    </key>
-    <!-- Generic Position names -->
-    <key name="clock-position" enum="dev.lethil.lesion.ClockPosition">
-      <default>'before'</default>
-      <summary>Place before or after the anchor element</summary>
-    </key>
-    <!-- New Customization Keys -->
-    <key name="clock-format-mode" enum="dev.lethil.lesion.ClockFormatMode">
-      <default>'default'</default>
-      <summary>Use system text or custom strftime format</summary>
-    </key>
-    <key name="clock-custom-format" type="s">
-      <default>'%H:%M  %A %d'</default>
-      <summary>GLib DateTime format string</summary>
-    </key>
-    <key name="clock-multiline" type="b">
-      <default>false</default>
-      <summary>Split date and time into two lines</summary>
-    </key>
-    <key name="clock-dim-separator" type="b">
-      <default>false</default>
-      <summary>Dim the separator between time and date</summary>
-    </key>
-    <key name="clock-custom-time" type="s">
-      <default>'%H:%M'</default>
-    </key>
-    <key name="clock-custom-date" type="s">
-      <default>'%A, %d %B'</default>
-    </key>
-    <!-- You can safely add more features later, e.g.:
-    <key name="clock-seconds" type="b"><default>false</default></key>
-    <key name="weather-enabled" type="b"><default>false</default></key>
-    -->
+    <key name="clock-move-enabled" type="b"><default>true</default></key>
+    <key name="clock-target" enum="dev.lethil.lesion.ClockTarget"><default>'right'</default></key>
+    <key name="clock-position" enum="dev.lethil.lesion.ClockPosition"><default>'before'</default></key>
+    <key name="clock-format-mode" enum="dev.lethil.lesion.ClockFormatMode"><default>'default'</default></key>
+    <key name="clock-custom-format" type="s"><default>'%H:%M  %A %d'</default></key>
+    <key name="clock-multiline" type="b"><default>false</default></key>
+    <key name="clock-dim-separator" type="b"><default>false</default></key>
+    <key name="clock-custom-time" type="s"><default>'%H:%M'</default></key>
+    <key name="clock-custom-date" type="s"><default>'%A, %d %B'</default></key>
 
     <!-- Apps -->
     <key name="apps-icon-size" type="i"><default>16</default></key>
     <key name="apps-icon-desaturate" type="b"><default>true</default></key>
-    
-    <!-- Opacity Customization -->
     <key name="apps-opacity-running" type="i"><default>255</default></key>
     <key name="apps-opacity-stopped" type="i"><default>160</default></key>
 
@@ -137,55 +176,29 @@
     <key name="apps-indicator-color" type="s"><default>'#ffffff'</default></key>
 
     <!-- Favorites -->
-    <key name="apps-favorites-enabled" type="b">
-      <default>false</default>
-    </key>
-    <key name="apps-favorites-pos" enum="dev.lethil.lesion.HorizontalPosition">
-      <default>'left'</default>
-    </key>
-    <key name="apps-favorites-index" type="i">
-      <default>0</default>
-    </key>
+    <key name="apps-favorites-enabled" type="b"><default>false</default></key>
+    <key name="apps-favorites-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
+    <key name="apps-favorites-index" type="i"><default>0</default></key>
 
     <!-- Running Apps -->
-    <key name="apps-running-enabled" type="b">
-      <default>false</default>
-    </key>
-    <key name="apps-running-pos" enum="dev.lethil.lesion.HorizontalPosition">
-      <default>'left'</default>
-    </key>
-    <key name="apps-running-index" type="i">
-      <default>0</default>
-    </key>
+    <key name="apps-running-enabled" type="b"><default>false</default></key>
+    <key name="apps-running-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
+    <key name="apps-running-index" type="i"><default>0</default></key>
 
     <!-- Disks -->
-    <key name="apps-disks-enabled" type="b">
-      <default>false</default>
-    </key>
-    <key name="apps-disks-pos" enum="dev.lethil.lesion.HorizontalPosition">
-      <default>'right'</default>
-    </key>
-    <key name="apps-disks-index" type="i">
-      <default>1</default>
-    </key>
+    <key name="apps-disks-enabled" type="b"><default>false</default></key>
+    <key name="apps-disks-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'right'</default></key>
+    <key name="apps-disks-index" type="i"><default>1</default></key>
 
     <!-- Trash -->
-    <key name="apps-trash-enabled" type="b">
-      <default>false</default>
-    </key>
-    <key name="apps-trash-pos" enum="dev.lethil.lesion.HorizontalPosition">
-      <default>'right'</default>
-    </key>
-    <key name="apps-trash-index" type="i">
-      <default>2</default>
-    </key>
+    <key name="apps-trash-enabled" type="b"><default>false</default></key>
+    <key name="apps-trash-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'right'</default></key>
+    <key name="apps-trash-index" type="i"><default>2</default></key>
     
     <!-- Show Grid Button -->
     <key name="apps-showgrid-enabled" type="b"><default>false</default></key>
     <key name="apps-showgrid-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
     <key name="apps-showgrid-index" type="i"><default>0</default></key>
-    
-    <!-- NEW: Expanded Show Grid Options -->
     <key name="apps-showgrid-mode" enum="dev.lethil.lesion.ButtonMode"><default>'icon'</default></key>
     <key name="apps-showgrid-icon" type="s"><default>'start-here-symbolic'</default></key>
     <key name="apps-showgrid-path" type="s"><default>''</default></key>
@@ -196,5 +209,51 @@
     <key name="apps-overview-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
     <key name="apps-overview-index" type="i"><default>0</default></key>
     <key name="apps-overview-hide-default" type="b"><default>false</default></key>
+
+    <!-- PANEL CUSTOMIZATION -->
+    <key name="panel-enabled" type="b"><default>true</default></key>
+    
+    <!-- Panel: Bar -->
+    <key name="panel-position" enum="dev.lethil.lesion.BoxPosition"><default>'top'</default></key>
+    <key name="panel-bg-color" type="s"><default>'rgba(0,0,0,1)'</default></key>
+    <key name="panel-bg-gradient-enabled" type="b"><default>false</default></key>
+    <key name="panel-bg-gradient-color" type="s"><default>'rgba(0,0,0,0)'</default></key>
+    <key name="panel-bg-gradient-dir" type="i"><default>0</default></key>
+    <key name="panel-bg-blend-mode" enum="dev.lethil.lesion.BlendMode"><default>'normal'</default></key>
+
+    <key name="panel-border-size" type="i"><default>0</default></key>
+    <key name="panel-border-style" enum="dev.lethil.lesion.BorderStyle"><default>'solid'</default></key>
+    <key name="panel-border-color" type="s"><default>'rgba(255,255,255,0.2)'</default></key>
+    <key name="panel-border-bottom-only" type="b"><default>true</default></key>
+
+    <key name="panel-shadow-enabled" type="b"><default>false</default></key>
+    <key name="panel-shadow-color" type="s"><default>'rgba(0,0,0,0.5)'</default></key>
+    <key name="panel-shadow-inset" type="b"><default>false</default></key>
+    <key name="panel-shadow-x" type="i"><default>0</default></key>
+    <key name="panel-shadow-y" type="i"><default>0</default></key>
+    <key name="panel-shadow-blur" type="i"><default>4</default></key>
+    <key name="panel-shadow-spread" type="i"><default>0</default></key>
+
+    <!-- Panel: Buttons -->
+    <key name="panel-btn-radius" type="i"><default>0</default></key>
+    <key name="panel-btn-pad-min" type="i"><default>4</default></key>
+    <key name="panel-btn-pad-nat" type="i"><default>8</default></key>
+    <key name="panel-btn-bg-hover" type="s"><default>'rgba(255,255,255,0.1)'</default></key>
+    <key name="panel-btn-bg-active" type="s"><default>'rgba(255,255,255,0.2)'</default></key>
+    <key name="panel-btn-hover-enabled" type="b"><default>false</default></key>
+
+    <!-- Popup Menu -->
+    <key name="popup-radius" type="i"><default>12</default></key>
+    <key name="popup-shadow-enabled" type="b"><default>true</default></key>
+    <key name="popup-shadow-color" type="s"><default>'rgba(0,0,0,0.5)'</default></key>
+    <key name="popup-shadow-x" type="i"><default>0</default></key>
+    <key name="popup-shadow-y" type="i"><default>4</default></key>
+    <key name="popup-shadow-blur" type="i"><default>12</default></key>
+    <key name="popup-shadow-spread" type="i"><default>4</default></key>
+
+    <key name="popup-border-size" type="i"><default>0</default></key>
+    <key name="popup-border-style" enum="dev.lethil.lesion.BorderStyle"><default>'solid'</default></key>
+    <key name="popup-border-color" type="s"><default>'rgba(255,255,255,0.1)'</default></key>
+
   </schema>
 </schemalist>

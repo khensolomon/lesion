@@ -21,4 +21,8 @@ Features (General, Appearance, System)
 - System
   - [x] demo
   - [x] Export & Import Settings
-  
+- Clock
+  - [x] "formattingGuideGroup" on "clock" does not play well when resizing window.
+- Wallpaper
+  - [x] Enable/disable
+  - [x] Background image monochrome mod
