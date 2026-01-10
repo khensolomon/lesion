@@ -142,7 +142,7 @@ export class Indicator {
 
       // Default Icon
       if (!gicon) {
-          const iconPath = GLib.build_filenamev([this.extension.path, 'app', 'icon', 'panel-symbolic.svg']);
+          const iconPath = GLib.build_filenamev([this.extension.path, 'icon', 'hornbill-symbolic.svg']);
           gicon = Gio.icon_new_for_string(iconPath);
       }
 

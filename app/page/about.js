@@ -18,7 +18,7 @@ export function createAboutUI(navigator, goToPage) {
 
     // Logo Logic
     const rootDir = AppConfig.path || GLib.get_current_dir();
-    const iconPath = GLib.build_filenamev([rootDir, 'app', 'icon', 'icon.svg']);
+    const iconPath = GLib.build_filenamev([rootDir, 'icon', 'hornbill.svg']);
     
     let logoWidget;
     if (GLib.file_test(iconPath, GLib.FileTest.EXISTS)) {

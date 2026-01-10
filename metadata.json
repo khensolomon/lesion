@@ -4,18 +4,24 @@
   "description": "Demo extension with personalized settings",
   "version": 1,
   "settings-schema": "dev.lethil.lesion",
-  "version-name": "1.32-beta",
-  "shell-version": ["46", "47", "48", "49"],
+  "version-name": "1.33-beta",
+  "shell-version": [
+    "46",
+    "47",
+    "48",
+    "49"
+  ],
   "developer-name": "Khen Solomon Lethil",
-  "debug":true,
+  "debug": true,
   "prefs-page": true,
   "url": "https://github.com/khensolomon/lesion",
   "links": {
-      "issue": "issues",
-      "report": "issues/new",
-      "changelog": "blob/master/Changelog.md",
-      "license": "blob/master/LICENSE",
-      "MyOrdbok": "https://myordbok.com"
+    "readme": "blob/master/Readme.md",
+    "issue": "issues",
+    "report": "issues/new",
+    "changelog": "blob/master/Changelog.md",
+    "license": "blob/master/LICENSE",
+    "MyOrdbok": "https://myordbok.com"
   },
   "license_type": 2
 }

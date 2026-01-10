@@ -4,12 +4,37 @@ import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { AppConfig } from '../config.js';
+import { PanelsPresets } from '../data/panels.js';
 
 export function createPanelsUI() {
     const page = new Adw.PreferencesPage();
     const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
 
+    // --- Logic: Apply Preset ---
+    const applyPreset = (presetData) => {
+        // List of keys that are definitely Enums in the schema
+        const enumKeys = ['panel-border-style', 'popup-border-style'];
+        
+        Object.keys(presetData).forEach(key => {
+            const val = presetData[key];
+            const type = typeof val;
+
+            if (type === 'boolean') {
+                settings.set_boolean(key, val);
+            } else if (type === 'string') {
+                settings.set_string(key, val);
+            } else if (type === 'number') {
+                if (enumKeys.includes(key)) {
+                    settings.set_enum(key, val);
+                } else {
+                    settings.set_int(key, val);
+                }
+            }
+        });
+    };
+
     // --- Helpers ---
+    
     const createColorRow = (title, key) => {
         const row = new Adw.ActionRow({ title: title });
         const dialog = new Gtk.ColorDialog();
@@ -37,7 +62,6 @@ export function createPanelsUI() {
         return row;
     };
 
-    // Updated to support both Enum and Int keys
     const createComboRow = (title, key, options, isEnum = true) => {
         const model = new Gtk.StringList();
         options.forEach(opt => model.append(opt));
@@ -60,105 +84,172 @@ export function createPanelsUI() {
         return row;
     };
 
-    // --- 1. Master Switch ---
-    const mainGroup = new Adw.PreferencesGroup({ title: 'Main' });
-    page.add(mainGroup);
+    // --- 1. General Settings ---
+    const generalGroup = new Adw.PreferencesGroup({ 
+        title: 'General Configuration',
+        description: 'Toggle the entire suite of panel customizations on or off.'
+    });
+    page.add(generalGroup);
 
     const enableRow = new Adw.SwitchRow({ title: 'Enable Panel Styling' });
     settings.bind('panel-enabled', enableRow, 'active', Gio.SettingsBindFlags.DEFAULT);
-    mainGroup.add(enableRow);
+    generalGroup.add(enableRow);
 
-    // --- 2. Panel Bar ---
-    const barGroup = new Adw.PreferencesGroup({ title: 'Panel Bar' });
-    page.add(barGroup);
+    // --- 2. Presets (Placed after General) ---
+    const presetsGroup = new Adw.PreferencesGroup({ 
+        title: 'Presets',
+        description: 'Quickly apply a pre-defined theme to transform your panel\'s appearance instantly.'
+    });
+    // Add sensitivity binding so presets are disabled if panel styling is off
+    settings.bind('panel-enabled', presetsGroup, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+    page.add(presetsGroup);
 
-    // Background
-    const bgExpander = new Adw.ExpanderRow({ title: 'Background' });
-    barGroup.add(bgExpander);
-    bgExpander.add_row(createColorRow('Solid Color', 'panel-bg-color'));
+    PanelsPresets.forEach(preset => {
+        const row = new Adw.ActionRow({ 
+            title: preset.name,
+            subtitle: preset.description
+        });
+        
+        const applyBtn = new Gtk.Button({ 
+            icon_name: 'media-playback-start-symbolic', // Changed from emblem-ok-symbolic to "Play" icon
+            valign: Gtk.Align.CENTER,
+            tooltip_text: 'Apply ' + preset.name
+        });
+        
+        applyBtn.add_css_class('flat'); // Clean look
+        // applyBtn.add_css_class('circular'); // Removed as requested
+        
+        applyBtn.connect('clicked', () => {
+            applyPreset(preset.data);
+        });
+
+        row.add_suffix(applyBtn);
+        presetsGroup.add(row);
+    });
+
+    // --- 3. Panel Background ---
+    const bgGroup = new Adw.PreferencesGroup({ 
+        title: 'Panel Background',
+        description: 'Control the base color, gradients, and transparency levels of the top bar.'
+    });
+    page.add(bgGroup);
+    
+    bgGroup.add(createColorRow('Background Color', 'panel-bg-color'));
     
     const gradSwitch = new Adw.SwitchRow({ title: 'Enable Gradient' });
     settings.bind('panel-bg-gradient-enabled', gradSwitch, 'active', Gio.SettingsBindFlags.DEFAULT);
-    bgExpander.add_row(gradSwitch);
-    bgExpander.add_row(createColorRow('Gradient End Color', 'panel-bg-gradient-color'));
+    bgGroup.add(gradSwitch);
     
-    // Pass false to indicate this is an integer, not a formal enum
-    bgExpander.add_row(createComboRow('Gradient Direction', 'panel-bg-gradient-dir', ['Vertical', 'Horizontal'], false));
+    const gradColorRow = createColorRow('Gradient End Color', 'panel-bg-gradient-color');
+    settings.bind('panel-bg-gradient-enabled', gradColorRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+    bgGroup.add(gradColorRow);
+
+    const gradDirRow = createComboRow('Gradient Direction', 'panel-bg-gradient-dir', ['Vertical', 'Horizontal'], false);
+    settings.bind('panel-bg-gradient-enabled', gradDirRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+    bgGroup.add(gradDirRow);
+
+    // --- 4. Panel Border ---
+    const borderGroup = new Adw.PreferencesGroup({ 
+        title: 'Panel Border',
+        description: 'Define the outline of the panel with custom width, color, and line styles.'
+    });
+    page.add(borderGroup);
+
+    borderGroup.add(createSpinRow('Size', 'panel-border-size', 0, 10));
+    borderGroup.add(createColorRow('Color', 'panel-border-color'));
     
-    // Note: Removed Blend Mode as it is not supported in St
-    
-    // Border
-    const borderExpander = new Adw.ExpanderRow({ title: 'Border' });
-    barGroup.add(borderExpander);
-    borderExpander.add_row(createSpinRow('Size', 'panel-border-size', 0, 10));
-    borderExpander.add_row(createColorRow('Color', 'panel-border-color'));
     const borderStyles = ['Solid','Dotted','Dashed','Double','Groove','Ridge','Inset','Outset','None'];
-    borderExpander.add_row(createComboRow('Style', 'panel-border-style', borderStyles, true));
+    borderGroup.add(createComboRow('Style', 'panel-border-style', borderStyles, true));
     
     const bottomOnly = new Adw.SwitchRow({ title: 'Bottom Border Only' });
     settings.bind('panel-border-bottom-only', bottomOnly, 'active', Gio.SettingsBindFlags.DEFAULT);
-    borderExpander.add_row(bottomOnly);
+    borderGroup.add(bottomOnly);
 
-    // Shadow
-    const shadowExpander = new Adw.ExpanderRow({ title: 'Shadow' });
-    barGroup.add(shadowExpander);
+    // --- 5. Panel Shadow ---
+    const shadowGroup = new Adw.PreferencesGroup({ 
+        title: 'Panel Shadow',
+        description: 'Add depth to the panel using drop shadows or inner shadow effects.'
+    });
+    page.add(shadowGroup);
+
     const shEnable = new Adw.SwitchRow({ title: 'Enable Shadow' });
     settings.bind('panel-shadow-enabled', shEnable, 'active', Gio.SettingsBindFlags.DEFAULT);
-    shadowExpander.add_row(shEnable);
-    shadowExpander.add_row(createColorRow('Color', 'panel-shadow-color'));
-    shadowExpander.add_row(createSpinRow('Offset X', 'panel-shadow-x', -50, 50));
-    shadowExpander.add_row(createSpinRow('Offset Y', 'panel-shadow-y', -50, 50));
-    shadowExpander.add_row(createSpinRow('Blur', 'panel-shadow-blur', 0, 50));
-    shadowExpander.add_row(createSpinRow('Spread', 'panel-shadow-spread', -20, 50));
+    shadowGroup.add(shEnable);
+
+    // Helper to bind sensitivity to shadow switch
+    const bindShadow = (widget) => {
+        settings.bind('panel-shadow-enabled', widget, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+        shadowGroup.add(widget);
+    };
+
+    bindShadow(createColorRow('Color', 'panel-shadow-color'));
+    bindShadow(createSpinRow('Offset X', 'panel-shadow-x', -50, 50));
+    bindShadow(createSpinRow('Offset Y', 'panel-shadow-y', -50, 50));
+    bindShadow(createSpinRow('Blur', 'panel-shadow-blur', 0, 50));
+    bindShadow(createSpinRow('Spread', 'panel-shadow-spread', -20, 50));
+    
     const insetSw = new Adw.SwitchRow({ title: 'Inset Shadow' });
     settings.bind('panel-shadow-inset', insetSw, 'active', Gio.SettingsBindFlags.DEFAULT);
-    shadowExpander.add_row(insetSw);
+    bindShadow(insetSw);
 
-    // --- 3. Panel Buttons ---
-    const btnGroup = new Adw.PreferencesGroup({ title: 'Panel Buttons' });
+    // --- 6. Panel Buttons ---
+    const btnGroup = new Adw.PreferencesGroup({ 
+        title: 'Panel Buttons',
+        description: 'Fine-tune the shape, padding, and hover interaction states of individual panel items.'
+    });
     page.add(btnGroup);
     
     btnGroup.add(createSpinRow('Corner Radius', 'panel-btn-radius', 0, 50));
     btnGroup.add(createSpinRow('Min Padding (-minimum-hpadding)', 'panel-btn-pad-min', 0, 50));
     btnGroup.add(createSpinRow('Natural Padding (-natural-hpadding)', 'panel-btn-pad-nat', 0, 50));
 
-    const hoverExpander = new Adw.ExpanderRow({ title: 'Hover & Active State' });
-    btnGroup.add(hoverExpander);
     const hEnable = new Adw.SwitchRow({ title: 'Enable Hover Effect' });
     settings.bind('panel-btn-hover-enabled', hEnable, 'active', Gio.SettingsBindFlags.DEFAULT);
-    hoverExpander.add_row(hEnable);
-    hoverExpander.add_row(createColorRow('Hover Background', 'panel-btn-bg-hover'));
-    hoverExpander.add_row(createColorRow('Active Background', 'panel-btn-bg-active'));
+    btnGroup.add(hEnable);
 
-    // --- 4. Popup Menus ---
-    const popupGroup = new Adw.PreferencesGroup({ title: 'Popup Menus' });
+    const hColorRow = createColorRow('Hover Background', 'panel-btn-bg-hover');
+    settings.bind('panel-btn-hover-enabled', hColorRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+    btnGroup.add(hColorRow);
+
+    const aColorRow = createColorRow('Active Background', 'panel-btn-bg-active');
+    settings.bind('panel-btn-hover-enabled', aColorRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+    btnGroup.add(aColorRow);
+
+    // --- 7. Popup Menus ---
+    const popupGroup = new Adw.PreferencesGroup({ 
+        title: 'Popup Menus',
+        description: 'Style the dropdown menus (calendar, system menu) with custom borders, shadows, and rounding.'
+    });
     page.add(popupGroup);
     
     popupGroup.add(createSpinRow('Corner Radius', 'popup-radius', 0, 50));
     
-    // Popup Shadow
-    const pShadowExpander = new Adw.ExpanderRow({ title: 'Shadow' });
-    popupGroup.add(pShadowExpander);
-    const psEnable = new Adw.SwitchRow({ title: 'Enable' });
-    settings.bind('popup-shadow-enabled', psEnable, 'active', Gio.SettingsBindFlags.DEFAULT);
-    pShadowExpander.add_row(psEnable);
-    pShadowExpander.add_row(createColorRow('Color', 'popup-shadow-color'));
-    pShadowExpander.add_row(createSpinRow('X', 'popup-shadow-x', -50, 50));
-    pShadowExpander.add_row(createSpinRow('Y', 'popup-shadow-y', -50, 50));
-    pShadowExpander.add_row(createSpinRow('Blur', 'popup-shadow-blur', 0, 100));
-    pShadowExpander.add_row(createSpinRow('Spread', 'popup-shadow-spread', -50, 50));
-
     // Popup Border
-    const pBorderExpander = new Adw.ExpanderRow({ title: 'Border' });
-    popupGroup.add(pBorderExpander);
-    pBorderExpander.add_row(createSpinRow('Size', 'popup-border-size', 0, 10));
-    pBorderExpander.add_row(createColorRow('Color', 'popup-border-color'));
-    pBorderExpander.add_row(createComboRow('Style', 'popup-border-style', borderStyles, true));
+    popupGroup.add(createSpinRow('Border Size', 'popup-border-size', 0, 10));
+    popupGroup.add(createColorRow('Border Color', 'popup-border-color'));
+    popupGroup.add(createComboRow('Border Style', 'popup-border-style', borderStyles, true));
 
-    // Lock controls
-    settings.bind('panel-enabled', barGroup, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
-    settings.bind('panel-enabled', btnGroup, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
-    settings.bind('panel-enabled', popupGroup, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+    // Popup Shadow
+    const psEnable = new Adw.SwitchRow({ title: 'Enable Shadow' });
+    settings.bind('popup-shadow-enabled', psEnable, 'active', Gio.SettingsBindFlags.DEFAULT);
+    popupGroup.add(psEnable);
+
+    const bindPopupShadow = (widget) => {
+        settings.bind('popup-shadow-enabled', widget, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+        popupGroup.add(widget);
+    };
+
+    bindPopupShadow(createColorRow('Shadow Color', 'popup-shadow-color'));
+    bindPopupShadow(createSpinRow('Shadow X', 'popup-shadow-x', -50, 50));
+    bindPopupShadow(createSpinRow('Shadow Y', 'popup-shadow-y', -50, 50));
+    bindPopupShadow(createSpinRow('Shadow Blur', 'popup-shadow-blur', 0, 100));
+    bindPopupShadow(createSpinRow('Shadow Spread', 'popup-shadow-spread', -50, 50));
+
+    // Lock all groups if main enable is off
+    const groups = [bgGroup, borderGroup, shadowGroup, btnGroup, popupGroup];
+    groups.forEach(g => {
+        settings.bind('panel-enabled', g, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
+    });
 
     return page;
 }

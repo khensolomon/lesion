@@ -1,24 +1,25 @@
 /**
  * Wallpaper Presets Configuration
- * * Structure:
+ * * * New Structure:
  * - name: Display name
- * - image: (Optional) Single image for both modes
- * - image_light: (Optional) Light mode specific image
- * - image_dark: (Optional) Dark mode specific image
+ * - wallpaper: String (path relative to extension root) OR Object { light, dark }
  * - system: Settings for 'org.gnome.desktop.background'
- * - primary-color, secondary-color, color-shading-type, picture-options
  * - extension: Settings for our extension schema
+ * * * Path Examples:
+ * - "wallpaper/forest.jpg"  -> looks inside [extension_root]/wallpaper/
+ * - "assets/bg.png"         -> looks inside [extension_root]/assets/
+ * - "/usr/share/backgrounds/gnome/adwaita-l.jpg" -> Absolute path
  */
 export const WallpaperPresets = [
     {
         name: "Midnight Gradient",
-        // No image = use color gradient
+        // No wallpaper property = use system colors defined below
         system: {
             "primary-color": "#858583",
             "secondary-color": "#636362",
-            "color-shading-type": "vertical", // 'solid', 'vertical', 'horizontal'
-            "picture-options": "none", // 'none' usually hides image to show color
-            "picture-uri": "",         // Clear image to show gradient
+            "color-shading-type": "vertical",
+            "picture-options": "none",
+            "picture-uri": "",
             "picture-uri-dark": ""
         },
         extension: {
@@ -27,13 +28,14 @@ export const WallpaperPresets = [
             "wallpaper-blur-sigma": 0,
             "wallpaper-monochrome": false,
             "wallpaper-brightness": 1.0,
-            "wallpaper-show-image": false // Ensure image is toggled off
+            "wallpaper-show-image": false
         }
     },
     {
-        name: "Forest Focus",
-        // Single image example
-        image: "forest.jpg", 
+        name: "Hornbill Forest",
+        // Simple string: applies to both Light and Dark
+        // Flexible path: we now explicitly say "wallpaper/..."
+        wallpaper: "icon/hornbill-symbolic.svg", 
         system: {
             "primary-color": "#6e6e6eff",
             "secondary-color": "#555555ff",
@@ -51,9 +53,11 @@ export const WallpaperPresets = [
     },
     {
         name: "Day & Night",
-        // Dual image example
-        image_light: "chain-light.png",
-        image_dark: "chain-dark.jpg",
+        // Object: distinct images for modes
+        wallpaper: {
+            light: "wallpaper/chain-light.png",
+            dark: "wallpaper/chain-dark.jpg"
+        },
         system: {
             "primary-color": "#9B9797",
             "secondary-color": "#7E7D7D",
@@ -70,8 +74,8 @@ export const WallpaperPresets = [
     },
     {
         name: "Mono Minimal",
-        // Example with monochrome effect
-        image: "hornbill.svg", 
+        // Example: could be in a different folder if you wanted
+        wallpaper: "wallpaper/hornbill.svg", 
         system: {
             "primary-color": "#929292ff",
             "secondary-color": "#dedede",

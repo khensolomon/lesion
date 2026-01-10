@@ -6,7 +6,7 @@ import GLib from 'gi://GLib';
 import Cairo from 'cairo';
 import { logError } from '../util/logger.js';
 import { AppConfig } from '../config.js';
-import { WallpaperPresets } from '../data/presets.js';
+import { WallpaperPresets } from '../data/wallpaper.js';
 
 // Global reference to prevent GC closing the dialog
 let _activeWallpaperChooser = null;
@@ -143,7 +143,6 @@ export function createWallpaperUI() {
             btn.set_child(overlay);
 
             // --- LAYER 1: Background Colors (DrawingArea) ---
-            // We always create this to support transparency or solid/gradient presets
             const bgArea = new Gtk.DrawingArea();
             bgArea.set_hexpand(true);
             bgArea.set_vexpand(true);
@@ -187,17 +186,25 @@ export function createWallpaperUI() {
 
 
             // --- LAYER 2: Image (Picture) ---
-            const imgName = preset.image_light || preset.image;
-            if (extensionPath && imgName) {
+            // New logic: Check 'wallpaper' prop (string or object)
+            let imgRelativePath = null;
+            if (preset.wallpaper) {
+                if (typeof preset.wallpaper === 'string') {
+                    imgRelativePath = preset.wallpaper;
+                } else if (preset.wallpaper.light) {
+                    imgRelativePath = preset.wallpaper.light;
+                }
+            }
+            
+            if (extensionPath && imgRelativePath) {
                 try {
-                    const imagePath = GLib.build_filenamev([extensionPath, 'wallpaper', imgName]);
-                    const file = Gio.File.new_for_path(imagePath);
-                    if (file.query_exists(null)) {
+                    // Use helper to resolve path/url
+                    const file = _resolveFile(extensionPath, imgRelativePath);
+                    if (file && file.query_exists(null)) {
                         const pictureWidget = Gtk.Picture.new_for_file(file);
                         pictureWidget.set_content_fit(Gtk.ContentFit.COVER);
                         pictureWidget.set_hexpand(true);
                         pictureWidget.set_vexpand(true);
-                        // Add as overlay on top of background color
                         overlay.add_overlay(pictureWidget);
                     }
                 } catch(e) {}
@@ -342,21 +349,28 @@ export function createWallpaperUI() {
  */
 function _applyPreset(preset, bgSettings, extSettings, rootPath) {
     // 1. Handle Images (Light/Dark separation)
-    if (rootPath) {
-        // Light Mode Image
-        const lightImg = preset.image_light || preset.image;
-        if (lightImg) {
-            _setPresetImage(bgSettings, 'picture-uri', rootPath, lightImg);
-            // If we have an image, ensure toggle is ON unless preset forces it OFF
-            if (preset.extension?.['wallpaper-show-image'] !== false) {
-                extSettings.set_boolean('wallpaper-show-image', true);
-            }
+    if (rootPath && preset.wallpaper) {
+        let lightPath = null;
+        let darkPath = null;
+
+        if (typeof preset.wallpaper === 'string') {
+            lightPath = preset.wallpaper;
+            darkPath = preset.wallpaper;
+        } else {
+            lightPath = preset.wallpaper.light;
+            darkPath = preset.wallpaper.dark;
         }
 
-        // Dark Mode Image
-        const darkImg = preset.image_dark || preset.image; // Fallback to 'image' if 'image_dark' missing
-        if (darkImg) {
-            _setPresetImage(bgSettings, 'picture-uri-dark', rootPath, darkImg);
+        if (lightPath) {
+            _setPresetImage(bgSettings, 'picture-uri', rootPath, lightPath);
+        }
+        if (darkPath) {
+            _setPresetImage(bgSettings, 'picture-uri-dark', rootPath, darkPath);
+        }
+
+        // If we have an image, ensure toggle is ON unless preset forces it OFF
+        if (preset.extension?.['wallpaper-show-image'] !== false) {
+            extSettings.set_boolean('wallpaper-show-image', true);
         }
     }
 
@@ -393,11 +407,29 @@ function _applyPreset(preset, bgSettings, extSettings, rootPath) {
     }
 }
 
+/**
+ * Helper to resolve flexible paths:
+ * - "wallpaper/file.jpg" -> relative to root
+ * - "/usr/share..." -> absolute
+ */
+function _resolveFile(root, pathString) {
+    if (!pathString) return null;
+    if (pathString.startsWith('/')) {
+        // Absolute
+        return Gio.File.new_for_path(pathString);
+    } else {
+        // Relative
+        const fullPath = GLib.build_filenamev([root, ...pathString.split('/')]);
+        return Gio.File.new_for_path(fullPath);
+    }
+}
+
 function _setPresetImage(settings, key, root, filename) {
     try {
-        const imagePath = GLib.build_filenamev([root, 'wallpaper', filename]);
-        const file = Gio.File.new_for_path(imagePath);
-        settings.set_string(key, file.get_uri());
+        const file = _resolveFile(root, filename);
+        if (file) {
+            settings.set_string(key, file.get_uri());
+        }
     } catch (e) {
         logError(`Failed to set preset image ${filename}`, e);
     }
