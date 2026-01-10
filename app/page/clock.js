@@ -1,6 +1,7 @@
 import Adw from "gi://Adw";
 import Gtk from "gi://Gtk";
 import Gio from "gi://Gio";
+import Pango from "gi://Pango";
 import { AppConfig } from "../config.js";
 
 /**
@@ -29,12 +30,17 @@ export function createClockUI() {
     row.set_child(box);
 
     const header = new Gtk.Box({ spacing: 6, hexpand: true });
+    
+    // Title label with wrapping enabled for small screens
     const label = new Gtk.Label({
       label: title,
       xalign: 0,
       hexpand: true,
       css_classes: ["title-5"],
+      wrap: true,
+      wrap_mode: Pango.WrapMode.WORD,
     });
+    
     const arrow = new Gtk.Image({ icon_name: "pan-down-symbolic" });
 
     header.append(label);
@@ -78,6 +84,9 @@ export function createClockUI() {
         label: text,
         xalign: 0,
         hexpand: true,
+        wrap: true, // Essential for resizing
+        wrap_mode: Pango.WrapMode.WORD_CHAR, // Allows breaking long format strings if needed
+        natural_wrap_mode: Gtk.NaturalWrapMode.NONE, // Ensures it shrinks to fit the container
       })
     );
     return box;
@@ -89,7 +98,7 @@ export function createClockUI() {
   // --- GROUP 1: POSITIONING ---
   const posGroup = new Adw.PreferencesGroup({
     title: "Positioning",
-    description: "Change location",
+    description: "Control where the clock appears on the panel and its position relative to other elements.",
   });
   page.add(posGroup);
 
@@ -137,7 +146,7 @@ export function createClockUI() {
   // --- GROUP 2: FORMATTING ---
   const formatGroup = new Adw.PreferencesGroup({
     title: "Appearance",
-    description: "Customize layout and text",
+    description: "Adjust the visual style, format the date and time strings, or choose a preset layout.",
   });
   page.add(formatGroup);
 
@@ -255,7 +264,7 @@ export function createClockUI() {
   // --- GROUP 3: FORMATTING GUIDE ---
   const formattingGuideGroup = new Adw.PreferencesGroup({
     title: "Formatting Guide",
-    description: "You can customize the clock using standard strftime format codes.",
+    description: "Reference for standard 'strftime' codes used to build custom date and time formats.",
   });
 
   const formattingGuideClamp = new Adw.Clamp({
