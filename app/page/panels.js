@@ -5,6 +5,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { AppConfig } from '../config.js';
 import { PanelsPresets } from '../data/panels.js';
+import { log, logError } from '../util/logger.js'; // Import logger
 
 export function createPanelsUI() {
     const page = new Adw.PreferencesPage();
@@ -35,22 +36,49 @@ export function createPanelsUI() {
 
     // --- Helpers ---
     
-    const createColorRow = (title, key) => {
-        const row = new Adw.ActionRow({ title: title });
-        const dialog = new Gtk.ColorDialog();
-        const btn = new Gtk.ColorDialogButton({ dialog, valign: Gtk.Align.CENTER });
-        const rgba = new Gdk.RGBA();
-        const savedVal = settings.get_string(key);
-        if (savedVal && rgba.parse(savedVal)) btn.set_rgba(rgba);
+    // const createColorRow = (title, key) => {
+    //     const row = new Adw.ActionRow({ title: title });
+    //     const dialog = new Gtk.ColorDialog();
+    //     const btn = new Gtk.ColorDialogButton({ dialog, valign: Gtk.Align.CENTER });
+    //     const rgba = new Gdk.RGBA();
+    //     const savedVal = settings.get_string(key);
+    //     if (savedVal && rgba.parse(savedVal)) btn.set_rgba(rgba);
 
-        btn.connect('notify::rgba', () => {
-            const c = btn.get_rgba();
-            const hexStr = `rgba(${Math.round(c.red*255)},${Math.round(c.green*255)},${Math.round(c.blue*255)},${c.alpha.toFixed(2)})`; 
-            settings.set_string(key, hexStr);
-        });
-        row.add_suffix(btn);
-        return row;
-    };
+    //     btn.connect('notify::rgba', () => {
+    //         const c = btn.get_rgba();
+    //         const hexStr = `rgba(${Math.round(c.red*255)},${Math.round(c.green*255)},${Math.round(c.blue*255)},${c.alpha.toFixed(2)})`; 
+    //         settings.set_string(key, hexStr);
+    //     });
+    //     row.add_suffix(btn);
+    //     return row;
+    // };
+const createColorRow = (title, key) => {
+    const row = new Adw.ActionRow({ title });
+    const dialog = new Gtk.ColorDialog({ with_alpha: true });
+    const btn = new Gtk.ColorDialogButton({
+        dialog,
+        valign: Gtk.Align.CENTER,
+    });
+
+    const rgba = new Gdk.RGBA();
+    const savedVal = settings.get_string(key);
+
+    if (savedVal && rgba.parse(savedVal)) {
+        btn.set_rgba(rgba);
+        row.set_subtitle(savedVal);
+    }
+
+    btn.connect('notify::rgba', () => {
+        const c = btn.get_rgba();
+        const rgbaStr = `rgba(${Math.round(c.red * 255)}, ${Math.round(c.green * 255)}, ${Math.round(c.blue * 255)}, ${c.alpha.toFixed(2)})`;
+
+        row.set_subtitle(rgbaStr);
+        settings.set_string(key, rgbaStr);
+    });
+
+    row.add_suffix(btn);
+    return row;
+};
 
     const createSpinRow = (title, key, min, max) => {
         const row = new Adw.SpinRow({
@@ -104,6 +132,102 @@ export function createPanelsUI() {
     settings.bind('panel-enabled', presetsGroup, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
     page.add(presetsGroup);
 
+    // DEBUG: Export Configuration
+    if (AppConfig.debug) {
+        const copyRow = new Adw.ActionRow({
+            title: 'Dev: Copy Current Config',
+            subtitle: 'Export current settings to clipboard as JSON for new presets.'
+        });
+        
+        const copyBtn = new Gtk.Button({
+            icon_name: 'edit-copy-symbolic',
+            valign: Gtk.Align.CENTER,
+            tooltip_text: 'Copy JSON to Clipboard'
+        });
+        copyBtn.add_css_class('flat');
+        
+
+        copyBtn.connect('clicked', () => {
+            log('Starting configuration export...');
+     
+            const targetKeys = [
+                'panel-enabled',
+                'panel-bg-color', 'panel-bg-gradient-enabled', 'panel-bg-gradient-color', 'panel-bg-gradient-dir',
+                'panel-border-size', 'panel-border-color', 'panel-border-style', 'panel-border-bottom-only',
+                'panel-shadow-enabled', 'panel-shadow-color', 'panel-shadow-x', 'panel-shadow-y', 'panel-shadow-blur', 'panel-shadow-spread', 'panel-shadow-inset',
+                'panel-btn-radius', 'panel-btn-pad-min', 'panel-btn-pad-nat', 'panel-btn-hover-enabled', 'panel-btn-bg-hover', 'panel-btn-bg-active',
+                'popup-radius', 
+                'popup-border-size', 'popup-border-color', 'popup-border-style',
+                'popup-shadow-enabled', 'popup-shadow-color', 'popup-shadow-x', 'popup-shadow-y', 'popup-shadow-blur', 'popup-shadow-spread'
+            ];
+            
+            try {
+                // SAFETY: Get currently available keys in schema to avoid C-level aborts on missing keys
+                const availableKeys = settings.list_keys();
+                log(`Found ${availableKeys.length} available keys in schema.`);
+                
+                const data = {};
+
+                targetKeys.forEach(k => {
+                    if (availableKeys.includes(k)) {
+                        const value = settings.get_value(k);
+                        if (value) {
+                             data[k] = value.deep_unpack();
+                        }
+                    } else {
+                        logError(`Skipping missing schema key during export: ${k}`);
+                    }
+                });
+
+                const exportObj = {
+                    name: "New Preset Name",
+                    description: "Description...",
+                    data: data
+                };
+
+                const json = JSON.stringify(exportObj, null, 4);
+                
+                // 1. Log to Journal (Primary backup)
+                log('Exported JSON content below:');
+                log(json);
+                
+                // 2. Clipboard Copy
+                let display = copyBtn.get_display();
+                if (!display) display = Gdk.Display.get_default();
+                
+                if (display) {
+                    const clipboard = display.get_clipboard();
+                    clipboard.set_text(json);
+                    log('JSON copied to clipboard successfully.');
+                    
+                    // Success Visual
+                    copyBtn.set_icon_name('emblem-ok-symbolic');
+                } else {
+                    logError('Could not find GdkDisplay to access clipboard.');
+                    copyBtn.set_icon_name('dialog-warning-symbolic');
+                }
+
+                // Reset icon
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+                    copyBtn.set_icon_name('edit-copy-symbolic');
+                    return GLib.SOURCE_REMOVE;
+                });
+            } catch (err) {
+                logError('Copy Config Failed with exception:', err);
+                copyBtn.set_icon_name('dialog-error-symbolic');
+                
+                // Reset icon even on error
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+                    copyBtn.set_icon_name('edit-copy-symbolic');
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        });
+
+        copyRow.add_suffix(copyBtn);
+        presetsGroup.add(copyRow);
+    }
+
     PanelsPresets.forEach(preset => {
         const row = new Adw.ActionRow({ 
             title: preset.name,
@@ -111,16 +235,16 @@ export function createPanelsUI() {
         });
         
         const applyBtn = new Gtk.Button({ 
-            icon_name: 'media-playback-start-symbolic', // Changed from emblem-ok-symbolic to "Play" icon
+            icon_name: 'media-playback-start-symbolic', // Play icon indicating "Run/Apply"
             valign: Gtk.Align.CENTER,
             tooltip_text: 'Apply ' + preset.name
         });
         
-        applyBtn.add_css_class('flat'); // Clean look
-        // applyBtn.add_css_class('circular'); // Removed as requested
+        applyBtn.add_css_class('flat');
         
         applyBtn.connect('clicked', () => {
             applyPreset(preset.data);
+            
         });
 
         row.add_suffix(applyBtn);

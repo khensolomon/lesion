@@ -66,6 +66,38 @@ export const PanelsPresets = [
         }
     },
     {
+        name: 'Chain link',
+        description: 'Modern, floating, semi-transparent dark theme',
+        data: {
+            'panel-enabled': true,
+            'panel-bg-color': 'rgba(0,0,0,0.86)',
+            'panel-bg-gradient-enabled': true,
+            'panel-bg-gradient-color': 'rgba(0,0,0,0.70)',
+            'panel-bg-gradient-dir': 0, // Vertical
+
+            'panel-border-size': 1,
+            'popup-border-color': 'rgba(255,255,255,0.09)',
+            'panel-border-style': 0, // Solid
+            'panel-border-bottom-only': true,
+
+            'panel-shadow-enabled': true,
+            'panel-shadow-color': 'rgba(0,0,0,0.76)',
+            'panel-shadow-x': 0,
+            'panel-shadow-y': -2,
+            'panel-shadow-blur': 3,
+            'panel-shadow-spread': 0,
+
+            'panel-btn-radius': 8,
+            'panel-btn-pad-min': 8,
+            'panel-btn-pad-nat': 8,
+            'panel-btn-hover-enabled': false,
+            'popup-radius': 8,
+            'popup-border-size': 1,
+            'popup-border-color': 'rgba(255,255,255,0.1)',
+            'popup-shadow-enabled': true
+        }
+    },
+    {
         name: 'Glassy Dark',
         description: 'Modern, floating, semi-transparent dark theme',
         data: {

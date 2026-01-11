@@ -76,7 +76,7 @@ export function getPages() {
         {
           id: "css",
           title: "CSS",
-          icon: "preferences-desktop-theme-symbolic",
+          icon: "preferences-desktop-appearance-symbolic",
           description: "Manage bundled and custom CSS",
           keywords: ["css", "style", "theme", "color", "custom"],
           ui: createCssUI,
@@ -92,7 +92,7 @@ export function getPages() {
         {
           id: "window-geometry",
           title: "Geometry",
-          icon: "preferences-desktop-keyboard-shortcuts-symbolic",
+          icon: "video-single-display-symbolic",
           description: "geometry saving and restoring",
           keywords: ['width', 'height', 'position', 'size', 'remember'],
           ui: createGeometryUI,
@@ -134,7 +134,7 @@ export function getPages() {
         {
             id: 'panel-style',
             title: 'Style',
-            icon: 'preferences-desktop-appearance-symbolic',
+            icon: 'preferences-desktop-keyboard-shortcuts-symbolic',
             keywords: ['panel', 'style', 'appearance', 'theme', 'color', 'transparency', 'gradient', 'background', 'border', 'shadow', 'bar'],
             ui: createPanelsUI
         },

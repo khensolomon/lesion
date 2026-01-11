@@ -7,36 +7,56 @@
 /* 1. Make the Top Bar Bright Red */
 /* This is the easiest and most obvious element to change. */
 #panel {
-  background-color: red !important;
-  border: 2px solid lime !important;
+  margin: 7px 10px;
+  background-color: rgba(99, 97, 97, 0.644);
+  border: 1px solid rgba(236, 236, 236, 0.144);
+  border-radius: 8px;
+  box-shadow: inset 0px 1px 3px rgba(0, 0, 0, 0.69); 
 }
 
 /* 2. Change the Panel Font and Clock */
 /* This targets all text in the top panel. */
 #panel .panel-button {
-  font-size: 14pt !important;
-  font-weight: bold !important;
-  color: yellow !important;
+  border-radius: 5px;
 }
-
-/* 3. Style the Activities Button Specifically */
+/* #panel .system-status-icon{
+  background-color: rgb(0, 238, 255);
+  margin: 0;
+}
+#panel .app-menu-icon{
+  background-color: gray;
+}
+#panel .panel-button-clock{
+  background-color: gold;
+}
+#panel .panel-status-button{
+  background-color: lime;
+}
+#panel .panel-aggregate-menu{
+  background-color: red;
+}
 #panel .panel-activity-button {
-  background-color: magenta !important;
-  border-radius: 20px !important;
+  background-color: magenta;
 }
+#panel StLabel{
+  background-color: red;
+}
+#panel StIcon{
+  background-color: blue;
+} */
 
 /* 4. Put a Thick Border on Window Header Bars */
 /* This targets the title bar of most modern application windows. */
 .header-bar {
-  border-bottom: 5px solid cyan !important;
-  background-image: none !important; /* Remove gradients to see color */
-  background-color: #333 !important;
+  border-bottom: 5px solid cyan;
+  background-image: none; /* Remove gradients to see color */
+  background-color: #333;
 }
 
 /* 5. Style Notifications */
 /* This will make any notification popup very obvious. */
 .notification-banner {
-  border: 4px solid orange !important;
-  border-radius: 25px !important;
-  background-color: black !important;
+  border: 4px solid orange;
+  border-radius: 25px;
+  background-color: black;
 }

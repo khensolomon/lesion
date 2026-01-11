@@ -77,7 +77,6 @@ export function createWallpaperUI() {
             }
         `;
 
-        // FIX: GTK 4.12+ uses load_from_string, older versions use load_from_data(data, length)
         try {
             if (typeof cssProvider.load_from_string === 'function') {
                 cssProvider.load_from_string(cssContent);
@@ -85,7 +84,6 @@ export function createWallpaperUI() {
                 cssProvider.load_from_data(cssContent, -1);
             }
         } catch (e) {
-            // Fallback for strict bindings
             try { cssProvider.load_from_data(cssContent, -1); } catch (err) { logError("CSS Provider Error", err); }
         }
 
@@ -116,8 +114,8 @@ export function createWallpaperUI() {
         const flowBox = new Gtk.FlowBox({
             valign: Gtk.Align.START,
             homogeneous: true,
-            min_children_per_line: 1, // Allow shrinking to 1 column
-            max_children_per_line: 20, // Allow expanding to many columns
+            min_children_per_line: 1, 
+            max_children_per_line: 20, 
             selection_mode: Gtk.SelectionMode.NONE,
             row_spacing: 12,
             column_spacing: 12,
@@ -130,24 +128,22 @@ export function createWallpaperUI() {
 
         WallpaperPresets.forEach(preset => {
             const btn = new Gtk.Button({
-                css_classes: ['card', 'preset-card'], // 'card' gives rounding, 'preset-card' clips it
+                css_classes: ['card', 'preset-card'], 
                 valign: Gtk.Align.CENTER,
                 hexpand: true
             });
-            // Set min width (160) so FlowBox knows when to wrap
             btn.set_size_request(160, 120); 
             
-            // Layout: Overlay (Stack layers: Color -> Image -> Label)
             const overlay = new Gtk.Overlay();
             overlay.set_overflow(Gtk.Overflow.HIDDEN); 
             btn.set_child(overlay);
 
-            // --- LAYER 1: Background Colors (DrawingArea) ---
+            // --- LAYER 1: Background Colors ---
             const bgArea = new Gtk.DrawingArea();
             bgArea.set_hexpand(true);
             bgArea.set_vexpand(true);
 
-            // Parse Colors
+            // Note: Presets still define 'primary-color' in 'system' block, which we now map to Light Mode key
             const pColor = preset.system?.['primary-color'] || '#000000';
             const sColor = preset.system?.['secondary-color'] || pColor;
             const type = preset.system?.['color-shading-type'] || 'solid';
@@ -160,33 +156,25 @@ export function createWallpaperUI() {
 
             bgArea.set_draw_func((area, cr, width, height) => {
                 let pattern;
-                
                 if (type === 'horizontal') {
                     pattern = new Cairo.LinearGradient(0, 0, width, 0);
                 } else if (type === 'vertical') {
                     pattern = new Cairo.LinearGradient(0, 0, 0, height);
                 } else {
-                    // Solid
                     cr.setSourceRGBA(c1.red, c1.green, c1.blue, c1.alpha);
                     cr.rectangle(0, 0, width, height);
                     cr.fill();
                     return;
                 }
-
                 pattern.addColorStopRGBA(0, c1.red, c1.green, c1.blue, c1.alpha);
                 pattern.addColorStopRGBA(1, c2.red, c2.green, c2.blue, c2.alpha);
-                
                 cr.setSource(pattern);
                 cr.rectangle(0, 0, width, height);
                 cr.fill();
             });
-
-            // Set as base child
             overlay.set_child(bgArea);
 
-
-            // --- LAYER 2: Image (Picture) ---
-            // New logic: Check 'wallpaper' prop (string or object)
+            // --- LAYER 2: Image ---
             let imgRelativePath = null;
             if (preset.wallpaper) {
                 if (typeof preset.wallpaper === 'string') {
@@ -195,10 +183,8 @@ export function createWallpaperUI() {
                     imgRelativePath = preset.wallpaper.light;
                 }
             }
-            
             if (extensionPath && imgRelativePath) {
                 try {
-                    // Use helper to resolve path/url
                     const file = _resolveFile(extensionPath, imgRelativePath);
                     if (file && file.query_exists(null)) {
                         const pictureWidget = Gtk.Picture.new_for_file(file);
@@ -210,31 +196,27 @@ export function createWallpaperUI() {
                 } catch(e) {}
             }
 
-            // --- LAYER 3: Label (Foreground Overlay) ---
+            // --- LAYER 3: Label ---
             const labelBox = new Gtk.Box({
                 orientation: Gtk.Orientation.HORIZONTAL,
                 valign: Gtk.Align.END,
                 halign: Gtk.Align.FILL,
                 css_classes: ['preset-overlay-box']
             });
-
             const label = new Gtk.Label({
                 label: preset.name,
                 css_classes: ['preset-label'],
                 halign: Gtk.Align.START,
-                ellipsize: 3 // Pango.EllipsizeMode.END
+                ellipsize: 3 
             });
-            
             labelBox.append(label);
             overlay.add_overlay(labelBox);
 
             btn.connect('clicked', () => {
                 _applyPreset(preset, bgSettings, extSettings, extensionPath);
             });
-
             flowBox.append(btn);
         });
-        
         presetGroup.add(flowBox);
 
 
@@ -245,7 +227,6 @@ export function createWallpaperUI() {
         });
         page.add(imgGroup);
 
-        // Visibility (Auto-syncs via bind)
         const showImageRow = new Adw.SwitchRow({
             title: 'Show Image',
             subtitle: 'Toggle the desktop background wallpaper'
@@ -253,7 +234,6 @@ export function createWallpaperUI() {
         extSettings.bind('wallpaper-show-image', showImageRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         imgGroup.add(showImageRow);
 
-        // Image Selectors (Reactive)
         const lightRow = _createImageRow(bgSettings, 'picture-uri', 'Light Mode Image');
         extSettings.bind('wallpaper-show-image', lightRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
         imgGroup.add(lightRow);
@@ -269,7 +249,6 @@ export function createWallpaperUI() {
         });
         page.add(optGroup);
         
-        // Options Combo (Reactive)
         const optionsRow = _createOptionsRow(bgSettings);
         extSettings.bind('wallpaper-show-image', optionsRow, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
         optGroup.add(optionsRow);
@@ -282,7 +261,6 @@ export function createWallpaperUI() {
         });
         page.add(fxGroup);
 
-        // Monochrome (Manual bind to fix glitches)
         const monoRow = new Adw.SwitchRow({
             title: 'Monochrome',
             subtitle: 'Desaturate the background'
@@ -290,7 +268,6 @@ export function createWallpaperUI() {
         _bindSwitch(extSettings, 'wallpaper-monochrome', monoRow);
         fxGroup.add(monoRow);
 
-        // Blur (Auto-syncs via bind)
         const blurRow = new Adw.ActionRow({ title: "Blur Amount" });
         const blurScale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 30, 1);
         blurScale.set_hexpand(true);
@@ -301,7 +278,6 @@ export function createWallpaperUI() {
         blurRow.add_suffix(blurScale);
         fxGroup.add(blurRow);
 
-        // Brightness (Auto-syncs via bind)
         const brightRow = new Adw.ActionRow({ title: "Brightness" });
         const brightScale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.0, 1.0, 0.1);
         brightScale.set_hexpand(true);
@@ -320,18 +296,16 @@ export function createWallpaperUI() {
         });
         page.add(colorGroup);
 
-        // Colors (Reactive)
-        // 1. Prepare rows first (Create secondary rows so they can be passed as dependencies)
-        const lightSecRow = _createColorRow(bgSettings, 'secondary-color', 'Light Secondary');
+        // FIX: Bind to EXTENSION settings for Light Colors now, not system bgSettings
+        const lightSecRow = _createColorRow(extSettings, 'wallpaper-secondary-color-light', 'Light Secondary');
         const darkSecRow = _createColorRow(extSettings, 'wallpaper-secondary-color-dark', 'Dark Secondary');
         
-        // 2. Shading Mode (Controls sensitivity of BOTH Secondary Colors)
         // Pass array of rows to disable
         const shadingRow = _createShadingRow(bgSettings, [lightSecRow, darkSecRow]);
         colorGroup.add(shadingRow);
 
-        // 3. Add Color Rows to Group
-        colorGroup.add(_createColorRow(bgSettings, 'primary-color', 'Light Primary'));
+        // FIX: Bind to EXTENSION settings for Light Primary
+        colorGroup.add(_createColorRow(extSettings, 'wallpaper-primary-color-light', 'Light Primary'));
         colorGroup.add(lightSecRow);
         
         colorGroup.add(_createColorRow(extSettings, 'wallpaper-primary-color-dark', 'Dark Primary'));
@@ -348,7 +322,7 @@ export function createWallpaperUI() {
  * Apply all settings defined in the preset
  */
 function _applyPreset(preset, bgSettings, extSettings, rootPath) {
-    // 1. Handle Images (Light/Dark separation)
+    // 1. Handle Images
     if (rootPath && preset.wallpaper) {
         let lightPath = null;
         let darkPath = null;
@@ -361,33 +335,33 @@ function _applyPreset(preset, bgSettings, extSettings, rootPath) {
             darkPath = preset.wallpaper.dark;
         }
 
-        if (lightPath) {
-            _setPresetImage(bgSettings, 'picture-uri', rootPath, lightPath);
-        }
-        if (darkPath) {
-            _setPresetImage(bgSettings, 'picture-uri-dark', rootPath, darkPath);
-        }
+        if (lightPath) _setPresetImage(bgSettings, 'picture-uri', rootPath, lightPath);
+        if (darkPath) _setPresetImage(bgSettings, 'picture-uri-dark', rootPath, darkPath);
 
-        // If we have an image, ensure toggle is ON unless preset forces it OFF
         if (preset.extension?.['wallpaper-show-image'] !== false) {
             extSettings.set_boolean('wallpaper-show-image', true);
         }
     }
 
-    // 2. Apply System Settings
+    // 2. Handle System Settings (Map Primary/Secondary to Light Extension keys)
     if (preset.system) {
         Object.keys(preset.system).forEach(key => {
-            // skip pseudo-keys handled above if any
             if (key === 'picture-uri' || key === 'picture-uri-dark') return;
             
             const val = preset.system[key];
             try {
-                bgSettings.set_string(key, val);
+                if (key === 'primary-color') {
+                    extSettings.set_string('wallpaper-primary-color-light', val);
+                } else if (key === 'secondary-color') {
+                    extSettings.set_string('wallpaper-secondary-color-light', val);
+                } else {
+                    bgSettings.set_string(key, val);
+                }
             } catch(e) { logError(`Preset error system key ${key}`, e); }
         });
     }
 
-    // 3. Apply Extension Settings
+    // 3. Handle Extension Settings
     if (preset.extension) {
         Object.keys(preset.extension).forEach(key => {
             const val = preset.extension[key];
@@ -407,18 +381,11 @@ function _applyPreset(preset, bgSettings, extSettings, rootPath) {
     }
 }
 
-/**
- * Helper to resolve flexible paths:
- * - "wallpaper/file.jpg" -> relative to root
- * - "/usr/share..." -> absolute
- */
 function _resolveFile(root, pathString) {
     if (!pathString) return null;
     if (pathString.startsWith('/')) {
-        // Absolute
         return Gio.File.new_for_path(pathString);
     } else {
-        // Relative
         const fullPath = GLib.build_filenamev([root, ...pathString.split('/')]);
         return Gio.File.new_for_path(fullPath);
     }
@@ -452,9 +419,6 @@ function _addError(page, title, e) {
     page.add(g);
 }
 
-/**
- * Creates an Image Row that listens for settings changes
- */
 function _createImageRow(settings, key, title) {
     const row = new Adw.ActionRow({ title: title });
     if (!settings) return row;
@@ -471,12 +435,8 @@ function _createImageRow(settings, key, title) {
         } catch(e) { row.set_subtitle('Error'); }
     };
 
-    // Initial load
     updateSubtitle();
-
-    // Listen for external changes (e.g. Preset applied)
     const signalId = settings.connect(`changed::${key}`, updateSubtitle);
-    // Cleanup signal when row is destroyed
     row.connect('destroy', () => settings.disconnect(signalId));
 
     const btn = new Gtk.Button({ icon_name: 'folder-open-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat'] });
@@ -498,7 +458,6 @@ function _createImageRow(settings, key, title) {
                 if (response === Gtk.ResponseType.ACCEPT) {
                     const uri = d.get_file().get_uri();
                     settings.set_string(key, uri);
-                    // Subtitle updates automatically via signal
                 }
                 d.destroy();
                 _activeWallpaperChooser = null;
@@ -510,9 +469,6 @@ function _createImageRow(settings, key, title) {
     return row;
 }
 
-/**
- * Creates a Color Row that listens for settings changes
- */
 function _createColorRow(settings, key, title) {
     const row = new Adw.ActionRow({ title: title });
     const colorBtn = new Gtk.ColorButton({ valign: Gtk.Align.CENTER });
@@ -521,15 +477,13 @@ function _createColorRow(settings, key, title) {
         try {
             const rgba = new Gdk.RGBA();
             const str = settings.get_string(key);
+            // Handle empty string gracefully
             if (!str || !rgba.parse(str)) rgba.parse("#000000");
             colorBtn.set_rgba(rgba);
         } catch (e) {}
     };
 
-    // Initial load
     updateColor();
-
-    // Listen for changes
     if (settings) {
         const signalId = settings.connect(`changed::${key}`, updateColor);
         row.connect('destroy', () => settings.disconnect(signalId));
@@ -546,9 +500,6 @@ function _createColorRow(settings, key, title) {
     return row;
 }
 
-/**
- * Creates Options Combo that listens for settings changes
- */
 function _createOptionsRow(settings) {
     let model = new Gtk.StringList({
         strings: ['none', 'wallpaper', 'centered', 'scaled', 'stretched', 'zoom', 'spanned']
@@ -568,13 +519,10 @@ function _createOptionsRow(settings) {
                 break;
             }
         }
-        if (!found) row.set_selected(5); // Default zoom
+        if (!found) row.set_selected(5);
     };
 
-    // Initial load
     updateSelection();
-
-    // Listen
     if (settings) {
         const signalId = settings.connect('changed::picture-options', updateSelection);
         row.connect('destroy', () => settings.disconnect(signalId));
@@ -584,7 +532,6 @@ function _createOptionsRow(settings) {
         const i = row.selected;
         if (i >= 0 && i < model.get_n_items()) {
             const val = model.get_item(i).get_string();
-            // Avoid loop if already same
             if (settings.get_string('picture-options') !== val) {
                 settings.set_string('picture-options', val);
             }
@@ -594,10 +541,6 @@ function _createOptionsRow(settings) {
     return row;
 }
 
-/**
- * Creates Shading Type (Gradient) Combo that listens for changes
- * and controls sensitivity of dependencyRow (usually secondary color)
- */
 function _createShadingRow(settings, dependencies) {
     let model = new Gtk.StringList({
         strings: ['solid', 'vertical', 'horizontal']
@@ -620,7 +563,6 @@ function _createShadingRow(settings, dependencies) {
             }
             if (!found) row.set_selected(0);
 
-            // Disable secondary colors if mode is solid
             if (dependencies) {
                 const sensitive = current !== 'solid';
                 if (Array.isArray(dependencies)) {
@@ -637,7 +579,6 @@ function _createShadingRow(settings, dependencies) {
     };
 
     updateState();
-
     if (settings) {
         const id = settings.connect('changed::color-shading-type', updateState);
         row.connect('destroy', () => settings.disconnect(id));
@@ -656,22 +597,14 @@ function _createShadingRow(settings, dependencies) {
     return row;
 }
 
-/**
- * Helper to manual bind switch to prevent UI Glitches
- */
 function _bindSwitch(settings, key, row) {
-    // 1. Initial State
     row.set_active(settings.get_boolean(key));
-
-    // 2. UI -> Settings
     row.connect('notify::active', () => {
         const val = row.get_active();
         if (settings.get_boolean(key) !== val) {
             settings.set_boolean(key, val);
         }
     });
-
-    // 3. Settings -> UI
     const id = settings.connect(`changed::${key}`, () => {
         const val = settings.get_boolean(key);
         if (row.get_active() !== val) {

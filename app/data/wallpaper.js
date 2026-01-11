@@ -37,14 +37,14 @@ export const WallpaperPresets = [
         // Flexible path: we now explicitly say "wallpaper/..."
         wallpaper: "icon/hornbill-symbolic.svg", 
         system: {
-            "primary-color": "#6e6e6eff",
-            "secondary-color": "#555555ff",
-            "color-shading-type": "solid",
-            "picture-options": "zoom"
+            "primary-color": "#656161",
+            "secondary-color": "#474545",
+            "color-shading-type": "vertical",
+            "picture-options": "centered",
         },
         extension: {
-            "wallpaper-primary-color-dark": "#1e3020",
-            "wallpaper-secondary-color-dark": "#0f1a10",
+            "wallpaper-primary-color-dark": "#474948ff",
+            "wallpaper-secondary-color-dark": "#262927ff",
             "wallpaper-blur-sigma": 5,
             "wallpaper-monochrome": false,
             "wallpaper-brightness": 0.9,
@@ -52,20 +52,21 @@ export const WallpaperPresets = [
         }
     },
     {
-        name: "Day & Night",
-        // Object: distinct images for modes
+        name: "Chain Link",
+        // Object: distinct images for modes Day & Night
         wallpaper: {
             light: "wallpaper/chain-light.png",
-            dark: "wallpaper/chain-dark.jpg"
+            dark: "wallpaper/chain-dark.png"
         },
         system: {
             "primary-color": "#9B9797",
             "secondary-color": "#7E7D7D",
-            "picture-options": "zoom"
+            "color-shading-type": "vertical",
+            "picture-options": "centered"
         },
         extension: {
-            "wallpaper-primary-color-dark": "#000000",
-            "wallpaper-secondary-color-dark": "#000000",
+            "wallpaper-primary-color-dark": "#413f3fff",
+            "wallpaper-secondary-color-dark": "#313131ff",
             "wallpaper-blur-sigma": 0,
             "wallpaper-monochrome": false,
             "wallpaper-brightness": 1.0,
@@ -75,10 +76,10 @@ export const WallpaperPresets = [
     {
         name: "Mono Minimal",
         // Example: could be in a different folder if you wanted
-        wallpaper: "wallpaper/hornbill.svg", 
+        wallpaper: "icon/hornbill.svg", 
         system: {
-            "primary-color": "#929292ff",
-            "secondary-color": "#dedede",
+            "primary-color": "#615F5F",
+            "secondary-color": "#4F4C4C",
             "picture-options": "scaled"
         },
         extension: {
