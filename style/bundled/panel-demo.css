@@ -48,7 +48,7 @@
 /* 4. Put a Thick Border on Window Header Bars */
 /* This targets the title bar of most modern application windows. */
 .header-bar {
-  border-bottom: 5px solid cyan;
+  border-bottom: 5px solid rgb(255, 0, 0);
   background-image: none; /* Remove gradients to see color */
   background-color: #333;
 }

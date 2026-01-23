@@ -18,7 +18,7 @@ export class ClockManager extends ExtensionComponent {
      * Initializes the custom clock widget and hooks into system signals.
      */
     onEnable() {
-        log("ClockManager enabled");
+        log("[Clock] enabling manager");
 
         /** @type {Main.DateMenu.DateMenuButton} */
         this._dateMenu = Main.panel.statusArea.dateMenu;

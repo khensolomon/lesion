@@ -16,408 +16,406 @@ import { log, logError } from '../util/logger.js';
 /**
  * Base Button Class for Application Panel Items
  */
-class AppPanelButtonBase extends PanelMenu.Button {
-    _init(iconOrActor, name, clickCallback, menuCallback) {
-        super._init(0.0, name);
-        
-        // UPDATED: Removed margin as requested
-        this.style = 'min-width: 0px; padding: 0 4px;'; 
+const AppPanelButton = GObject.registerClass(
+    { GTypeName: 'LesionAppPanelButton' },
+    class AppPanelButton extends PanelMenu.Button {
+        _init(iconOrActor, name, clickCallback, menuCallback) {
+            super._init(0.0, name);
+            
+            // UPDATED: Removed margin as requested
+            this.style = 'min-width: 0px; padding: 0 4px;'; 
 
-        this._box = new St.Widget({ 
-            layout_manager: new Clutter.BinLayout(),
-            x_expand: true, 
-            y_expand: true 
-        });
-        this.add_child(this._box);
+            this._box = new St.Widget({ 
+                layout_manager: new Clutter.BinLayout(),
+                x_expand: true, 
+                y_expand: true 
+            });
+            this.add_child(this._box);
 
-        this.iconActor = iconOrActor; 
-        
-        // Ensure the actor is aligned center if it's an Icon or Label
-        this.iconActor.x_align = Clutter.ActorAlign.CENTER;
-        this.iconActor.y_align = Clutter.ActorAlign.CENTER;
-        
-        // Pivot point is useful for icon animations, might not apply to Label, but harmless
-        this.iconActor.set_pivot_point(0.5, 0.5);
-        this._box.add_child(this.iconActor);
+            this.iconActor = iconOrActor; 
+            
+            // Ensure the actor is aligned center if it's an Icon or Label
+            this.iconActor.x_align = Clutter.ActorAlign.CENTER;
+            this.iconActor.y_align = Clutter.ActorAlign.CENTER;
+            
+            // Pivot point is useful for icon animations, might not apply to Label, but harmless
+            this.iconActor.set_pivot_point(0.5, 0.5);
+            this._box.add_child(this.iconActor);
 
-        this._dot = new St.Widget({
-            visible: true, 
-            opacity: 0
-        });
-        this._dot.set_pivot_point(0.5, 0.5);
-        this._box.add_child(this._dot);
+            this._dot = new St.Widget({
+                visible: true, 
+                opacity: 0
+            });
+            this._dot.set_pivot_point(0.5, 0.5);
+            this._box.add_child(this._dot);
 
-        // Secondary Label (e.g., Workspace Indicator)
-        this._label = new St.Label({
-            style_class: 'app-panel-label',
-            visible: false,
-            x_align: Clutter.ActorAlign.END,
-            y_align: Clutter.ActorAlign.END,
-            style: 'font-size: 9px; font-weight: 800; color: white; background-color: rgba(0,0,0,0.6); border-radius: 99px; padding: 1px 4px; margin-bottom: 2px; margin-right: 2px;'
-        });
-        this._box.add_child(this._label);
+            // Secondary Label (e.g., Workspace Indicator)
+            this._label = new St.Label({
+                style_class: 'app-panel-label',
+                visible: false,
+                x_align: Clutter.ActorAlign.END,
+                y_align: Clutter.ActorAlign.END,
+                style: 'font-size: 9px; font-weight: 800; color: white; background-color: rgba(0,0,0,0.6); border-radius: 99px; padding: 1px 4px; margin-bottom: 2px; margin-right: 2px;'
+            });
+            this._box.add_child(this._label);
 
-        this.set_accessible_name(name);
+            this.set_accessible_name(name);
 
-        this._clickCallback = clickCallback;
-        this._menuCallback = menuCallback;
-        
-        this._role = null;
-        this._app = null; 
-        this._windows = [];
-        this._baseOpacity = 255; // Track intended state opacity
-        
-        // DND State
-        this._isDraggable = false;
-        this._dragged = false;
-        this._placeholder = null;
-        this._dragMonitor = null;
-        this._container = null;
-        
-        // Effects (Only add if it's an icon-like actor)
-        if (this.iconActor instanceof St.Icon) {
-            this._desatEffect = new Clutter.DesaturateEffect({ factor: 0.0 });
-            this.iconActor.add_effect(this._desatEffect);
-        }
-
-        // Hover & Cleanup
-        this.connect('notify::hover', () => this._onHoverChanged());
-        this.connect('destroy', () => this._onDestroy());
-    }
-
-    _onDestroy() {
-        if (this._dragMonitor) {
-            DND.removeDragMonitor(this._dragMonitor);
-            this._dragMonitor = null;
-        }
-        if (this._placeholder) {
-            this._placeholder.destroy();
+            this._clickCallback = clickCallback;
+            this._menuCallback = menuCallback;
+            
+            this._role = null;
+            this._app = null; 
+            this._windows = [];
+            this._baseOpacity = 255; // Track intended state opacity
+            
+            // DND State
+            this._isDraggable = false;
+            this._dragged = false;
             this._placeholder = null;
+            this._dragMonitor = null;
+            this._container = null;
+            
+            // Effects (Only add if it's an icon-like actor)
+            if (this.iconActor instanceof St.Icon) {
+                this._desatEffect = new Clutter.DesaturateEffect({ factor: 0.0 });
+                this.iconActor.add_effect(this._desatEffect);
+            }
+
+            // Hover & Cleanup
+            this.connect('notify::hover', () => this._onHoverChanged());
+            this.connect('destroy', () => this._onDestroy());
         }
-        this._container = null;
-    }
 
-    _onHoverChanged() {
-        if (this._dragged) return;
-        
-        // UPDATED: Opacity 100 if hovered, duration 600
-        const targetOpacity = this.hover ? 100 : this._baseOpacity;
+        _onDestroy() {
+            if (this._dragMonitor) {
+                DND.removeDragMonitor(this._dragMonitor);
+                this._dragMonitor = null;
+            }
+            if (this._placeholder) {
+                this._placeholder.destroy();
+                this._placeholder = null;
+            }
+            this._container = null;
+        }
 
-        this.iconActor.ease({
-            opacity: targetOpacity,
-            duration: 600, 
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD
-        });
-    }
-
-    enableDragging(onDragEndCallback) {
-        this._isDraggable = true;
-        this._onDragEnd = onDragEndCallback;
-
-        this._draggable = DND.makeDraggable(this, {
-            manualMode: false,
-            restoreOnSuccess: false, 
-            dragActorOpacity: 255
-        });
-
-        this._draggable.connect('drag-begin', () => {
+        _onHoverChanged() {
             if (this._dragged) return;
-            this._dragged = true;
-
-            this._container = this.get_parent();
-            while (this._container && !(this._container instanceof St.BoxLayout)) {
-                this._container = this._container.get_parent();
-            }
-            if (!this._container) {
-                this._dragged = false;
-                return;
-            }
-
-            this.visible = false;
-            this._createPlaceholder();
-            this._startDragMonitoring();
-        });
-
-        this._draggable.connect('drag-cancelled', () => this._finishDrag(true));
-        this._draggable.connect('drag-end', () => this._finishDrag(false));
-    }
-
-    getDragActor() {
-        // Handle dragging for Text vs Icon
-        if (this.iconActor instanceof St.Label) {
-             const clone = new St.Label({
-                 text: this.iconActor.text,
-                 style_class: this.iconActor.style_class,
-                 opacity: 220
-             });
-             return clone;
-        }
-
-        const clone = new St.Icon({
-            gicon: this.iconActor.gicon,
-            icon_size: this.iconActor.icon_size || 24,
-            opacity: 220
-        });
-        clone.set_pivot_point(0.5, 0.5);
-        return clone;
-    }
-
-    getDragActorSource() {
-        return this.iconActor;
-    }
-
-    _createPlaceholder() {
-        if (!this._container) return;
-        
-        let childActor;
-        if (this.iconActor instanceof St.Label) {
-             childActor = new St.Label({
-                 text: this.iconActor.text,
-                 style: 'opacity: 0.5'
-             });
-        } else {
-             childActor = new St.Icon({
-                gicon: this.iconActor.gicon,
-                icon_size: (this.iconActor.icon_size || 20), 
-                opacity: 100,
-                x_align: Clutter.ActorAlign.CENTER,
-                y_align: Clutter.ActorAlign.CENTER
-            });
-            const effect = new Clutter.DesaturateEffect({ factor: 1.0 });
-            childActor.add_effect(effect);
-        }
-
-        this._placeholder = new St.Bin({
-            style_class: 'app-panel-placeholder',
-            style: `
-                width: ${this.width}px;
-                height: 30px; 
-                background-color: rgba(255, 255, 255, 0.1);
-            `,
-            child: childActor
-        });
-        
-        let insertBefore = this;
-        if (this.get_parent() !== this._container) {
-            let p = this.get_parent();
-            while(p && p.get_parent() !== this._container) p = p.get_parent();
-            if (p) insertBefore = p;
-        }
-        
-        const index = this._container.get_children().indexOf(insertBefore);
-        if (index !== -1) {
-            this._container.insert_child_at_index(this._placeholder, index);
-        }
-    }
-
-    _startDragMonitoring() {
-        this._dragMonitor = {
-            dragMotion: () => {
-                if (!this._placeholder || !this._container) return DND.DragMotionResult.CONTINUE;
-
-                const [x, ] = global.get_pointer();
-                const children = this._container.get_children();
-                let targetIndex = 0;
-
-                const ACTIVATION_RATIO = 0.5;
-                let lastIndex = -1;
-
-                for (const child of children) {
-                    if (child === this._placeholder || !child.visible) continue;
-                    if (child === this || (child.contains && child.contains(this))) continue;
-
-                    const [childX] = child.get_transformed_position();
-                    const childW = child.width;
-                    const triggerX = childX + childW * ACTIVATION_RATIO;
-
-                    if (x < triggerX) break;
-                    targetIndex++;
-                }
-
-                const currentIndex = children.indexOf(this._placeholder);
-                if (targetIndex !== currentIndex && targetIndex !== lastIndex) {
-                    try {
-                        this._container.set_child_at_index(this._placeholder, targetIndex);
-                    } catch (error) {}
-                    lastIndex = targetIndex;
-                }
-
-                return DND.DragMotionResult.CONTINUE;
-            }
-        };
-
-        DND.addDragMonitor(this._dragMonitor);
-    }
-
-    _finishDrag(cancelled) {
-        if (this._draggable && this._draggable._dragActor) {
-            this._draggable._dragActor.destroy();
-        }
-
-        this._dragged = false;
-
-        if (this._dragMonitor) {
-            DND.removeDragMonitor(this._dragMonitor);
-            this._dragMonitor = null;
-        }
-
-        if (this._placeholder && this._container) {
-            const destIndex = this._container.get_children().indexOf(this._placeholder);
-            if (destIndex !== -1) {
-                let actorToMove = this;
-                if (this.get_parent() !== this._container) {
-                    let p = this.get_parent();
-                    while(p && p.get_parent() !== this._container) p = p.get_parent();
-                    if (p) actorToMove = p;
-                }
-                this._container.set_child_at_index(actorToMove, destIndex);
-            }
-            this._placeholder.destroy();
-            this._placeholder = null;
-        }
-
-        this.visible = true;
-        this.opacity = 255;
-        this.iconActor.scale_x = 1.0;
-        this.iconActor.scale_y = 1.0;
-
-        if (this._onDragEnd && this._container) {
-            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                if (this._onDragEnd) this._onDragEnd();
-                return GLib.SOURCE_REMOVE;
-            });
-        }
-
-        this._container = null;
-    }
-
-    updateDotStyle(width, height, color, radius) {
-        try {
-            if (!this.iconActor) return;
-            this._dot.width = width;
-            this._dot.height = height;
-            this._dot.style = `background-color: ${color}; border-radius: ${radius}px;`;
-        } catch(e) {}
-    }
-
-    updateDotLayout(posEnum, offset) {
-        try {
-            if (!this.iconActor) return;
-            this._dot.translation_x = 0;
-            this._dot.translation_y = 0;
-            switch(posEnum) {
-                case 0: this._dot.x_align = Clutter.ActorAlign.CENTER; this._dot.y_align = Clutter.ActorAlign.START; this._dot.translation_y = offset; break;
-                case 1: this._dot.x_align = Clutter.ActorAlign.END; this._dot.y_align = Clutter.ActorAlign.CENTER; this._dot.translation_x = -offset; break;
-                case 2: this._dot.x_align = Clutter.ActorAlign.CENTER; this._dot.y_align = Clutter.ActorAlign.END; this._dot.translation_y = -offset; break;
-                case 3: this._dot.x_align = Clutter.ActorAlign.START; this._dot.y_align = Clutter.ActorAlign.CENTER; this._dot.translation_x = offset; break;
-            }
-        } catch(e) {}
-    }
-
-    setVisualState(opacity, showDot) {
-        try {
-            if (!this.iconActor) return;
-            if (this._dragged || !this.visible) return;
-
-            // Store the intended state opacity (e.g. 160 for stopped, 255 for running)
-            this._baseOpacity = opacity;
-
-            // If currently hovered, stay at 255, otherwise use the requested state opacity
-            const effectiveOpacity = this.hover ? 100 : this._baseOpacity;
+            
+            // UPDATED: Opacity 100 if hovered, duration 600
+            const targetOpacity = this.hover ? 100 : this._baseOpacity;
 
             this.iconActor.ease({
-                opacity: effectiveOpacity,
-                duration: 250,
+                opacity: targetOpacity,
+                duration: 600, 
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD
             });
-            this._dot.ease({
-                opacity: showDot ? 255 : 0,
-                scale_x: showDot ? 1 : 0,
-                scale_y: showDot ? 1 : 0,
-                duration: 250,
-                mode: Clutter.AnimationMode.EASE_OUT_BACK
+        }
+
+        enableDragging(onDragEndCallback) {
+            this._isDraggable = true;
+            this._onDragEnd = onDragEndCallback;
+
+            this._draggable = DND.makeDraggable(this, {
+                manualMode: false,
+                restoreOnSuccess: false, 
+                dragActorOpacity: 255
             });
-        } catch(e) {}
-    }
 
-    setSecondaryLabel(text, visible) {
-        if (!this._label) return;
-        this._label.text = text || '';
-        this._label.visible = visible;
-    }
+            this._draggable.connect('drag-begin', () => {
+                if (this._dragged) return;
+                this._dragged = true;
 
-    _getWindows() {
-        if (this._app) return this._app.get_windows();
-        return this._windows || [];
-    }
+                this._container = this.get_parent();
+                while (this._container && !(this._container instanceof St.BoxLayout)) {
+                    this._container = this._container.get_parent();
+                }
+                if (!this._container) {
+                    this._dragged = false;
+                    return;
+                }
 
-    vfunc_scroll_event(event) {
-        const windows = this._getWindows();
-        if (windows.length > 1) {
-            const direction = event.get_scroll_direction();
-            const focusWin = global.display.focus_window;
-            let idx = windows.indexOf(focusWin);
+                this.visible = false;
+                this._createPlaceholder();
+                this._startDragMonitoring();
+            });
+
+            this._draggable.connect('drag-cancelled', () => this._finishDrag(true));
+            this._draggable.connect('drag-end', () => this._finishDrag(false));
+        }
+
+        getDragActor() {
+            // Handle dragging for Text vs Icon
+            if (this.iconActor instanceof St.Label) {
+                 const clone = new St.Label({
+                     text: this.iconActor.text,
+                     style_class: this.iconActor.style_class,
+                     opacity: 220
+                 });
+                 return clone;
+            }
+
+            const clone = new St.Icon({
+                gicon: this.iconActor.gicon,
+                icon_size: this.iconActor.icon_size || 24,
+                opacity: 220
+            });
+            clone.set_pivot_point(0.5, 0.5);
+            return clone;
+        }
+
+        getDragActorSource() {
+            return this.iconActor;
+        }
+
+        _createPlaceholder() {
+            if (!this._container) return;
             
-            if (idx === -1) idx = 0;
+            let childActor;
+            if (this.iconActor instanceof St.Label) {
+                 childActor = new St.Label({
+                     text: this.iconActor.text,
+                     style: 'opacity: 0.5'
+                 });
+            } else {
+                 childActor = new St.Icon({
+                    gicon: this.iconActor.gicon,
+                    icon_size: (this.iconActor.icon_size || 20), 
+                    opacity: 100,
+                    x_align: Clutter.ActorAlign.CENTER,
+                    y_align: Clutter.ActorAlign.CENTER
+                });
+                const effect = new Clutter.DesaturateEffect({ factor: 1.0 });
+                childActor.add_effect(effect);
+            }
+
+            this._placeholder = new St.Bin({
+                style_class: 'app-panel-placeholder',
+                style: `
+                    width: ${this.width}px;
+                    height: 30px; 
+                    background-color: rgba(255, 255, 255, 0.1);
+                `,
+                child: childActor
+            });
             
-            if (direction === Clutter.ScrollDirection.UP) {
-                idx = (idx - 1 + windows.length) % windows.length;
-            } else if (direction === Clutter.ScrollDirection.DOWN) {
-                idx = (idx + 1) % windows.length;
+            let insertBefore = this;
+            if (this.get_parent() !== this._container) {
+                let p = this.get_parent();
+                while(p && p.get_parent() !== this._container) p = p.get_parent();
+                if (p) insertBefore = p;
             }
             
-            windows[idx].activate(global.get_current_time());
-            return Clutter.EVENT_STOP;
+            const index = this._container.get_children().indexOf(insertBefore);
+            if (index !== -1) {
+                this._container.insert_child_at_index(this._placeholder, index);
+            }
         }
-        return Clutter.EVENT_PROPAGATE;
-    }
 
-    vfunc_event(event) {
-        try {
-            const type = event.type();
-            if (type === Clutter.EventType.BUTTON_PRESS) {
-                const button = event.get_button();
-                if (button === 1) {
-                    if (this._isDraggable) return Clutter.EVENT_PROPAGATE;
-                    return Clutter.EVENT_STOP;
+        _startDragMonitoring() {
+            this._dragMonitor = {
+                dragMotion: () => {
+                    if (!this._placeholder || !this._container) return DND.DragMotionResult.CONTINUE;
+
+                    const [x, ] = global.get_pointer();
+                    const children = this._container.get_children();
+                    let targetIndex = 0;
+
+                    const ACTIVATION_RATIO = 0.5;
+                    let lastIndex = -1;
+
+                    for (const child of children) {
+                        if (child === this._placeholder || !child.visible) continue;
+                        if (child === this || (child.contains && child.contains(this))) continue;
+
+                        const [childX] = child.get_transformed_position();
+                        const childW = child.width;
+                        const triggerX = childX + childW * ACTIVATION_RATIO;
+
+                        if (x < triggerX) break;
+                        targetIndex++;
+                    }
+
+                    const currentIndex = children.indexOf(this._placeholder);
+                    if (targetIndex !== currentIndex && targetIndex !== lastIndex) {
+                        try {
+                            this._container.set_child_at_index(this._placeholder, targetIndex);
+                        } catch (error) {}
+                        lastIndex = targetIndex;
+                    }
+
+                    return DND.DragMotionResult.CONTINUE;
                 }
-                if (button === 2) {
-                    if (this._app) {
-                         this._app.open_new_window(-1);
-                         return Clutter.EVENT_STOP;
+            };
+
+            DND.addDragMonitor(this._dragMonitor);
+        }
+
+        _finishDrag(cancelled) {
+            if (this._draggable && this._draggable._dragActor) {
+                this._draggable._dragActor.destroy();
+            }
+
+            this._dragged = false;
+
+            if (this._dragMonitor) {
+                DND.removeDragMonitor(this._dragMonitor);
+                this._dragMonitor = null;
+            }
+
+            if (this._placeholder && this._container) {
+                const destIndex = this._container.get_children().indexOf(this._placeholder);
+                if (destIndex !== -1) {
+                    let actorToMove = this;
+                    if (this.get_parent() !== this._container) {
+                        let p = this.get_parent();
+                        while(p && p.get_parent() !== this._container) p = p.get_parent();
+                        if (p) actorToMove = p;
                     }
-                    if (this.accessible_name === 'Trash') {
-                         Gio.AppInfo.launch_default_for_uri('trash:///', null);
-                         return Clutter.EVENT_STOP;
+                    this._container.set_child_at_index(actorToMove, destIndex);
+                }
+                this._placeholder.destroy();
+                this._placeholder = null;
+            }
+
+            this.visible = true;
+            this.opacity = 255;
+            this.iconActor.scale_x = 1.0;
+            this.iconActor.scale_y = 1.0;
+
+            if (this._onDragEnd && this._container) {
+                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                    if (this._onDragEnd) this._onDragEnd();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+
+            this._container = null;
+        }
+
+        updateDotStyle(width, height, color, radius) {
+            try {
+                if (!this.iconActor) return;
+                this._dot.width = width;
+                this._dot.height = height;
+                this._dot.style = `background-color: ${color}; border-radius: ${radius}px;`;
+            } catch(e) {}
+        }
+
+        updateDotLayout(posEnum, offset) {
+            try {
+                if (!this.iconActor) return;
+                this._dot.translation_x = 0;
+                this._dot.translation_y = 0;
+                switch(posEnum) {
+                    case 0: this._dot.x_align = Clutter.ActorAlign.CENTER; this._dot.y_align = Clutter.ActorAlign.START; this._dot.translation_y = offset; break;
+                    case 1: this._dot.x_align = Clutter.ActorAlign.END; this._dot.y_align = Clutter.ActorAlign.CENTER; this._dot.translation_x = -offset; break;
+                    case 2: this._dot.x_align = Clutter.ActorAlign.CENTER; this._dot.y_align = Clutter.ActorAlign.END; this._dot.translation_y = -offset; break;
+                    case 3: this._dot.x_align = Clutter.ActorAlign.START; this._dot.y_align = Clutter.ActorAlign.CENTER; this._dot.translation_x = offset; break;
+                }
+            } catch(e) {}
+        }
+
+        setVisualState(opacity, showDot) {
+            try {
+                if (!this.iconActor) return;
+                if (this._dragged || !this.visible) return;
+
+                // Store the intended state opacity (e.g. 160 for stopped, 255 for running)
+                this._baseOpacity = opacity;
+
+                // If currently hovered, stay at 255, otherwise use the requested state opacity
+                const effectiveOpacity = this.hover ? 100 : this._baseOpacity;
+
+                this.iconActor.ease({
+                    opacity: effectiveOpacity,
+                    duration: 250,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD
+                });
+                this._dot.ease({
+                    opacity: showDot ? 255 : 0,
+                    scale_x: showDot ? 1 : 0,
+                    scale_y: showDot ? 1 : 0,
+                    duration: 250,
+                    mode: Clutter.AnimationMode.EASE_OUT_BACK
+                });
+            } catch(e) {}
+        }
+
+        setSecondaryLabel(text, visible) {
+            if (!this._label) return;
+            this._label.text = text || '';
+            this._label.visible = visible;
+        }
+
+        _getWindows() {
+            if (this._app) return this._app.get_windows();
+            return this._windows || [];
+        }
+
+        vfunc_scroll_event(event) {
+            const windows = this._getWindows();
+            if (windows.length > 1) {
+                const direction = event.get_scroll_direction();
+                const focusWin = global.display.focus_window;
+                let idx = windows.indexOf(focusWin);
+                
+                if (idx === -1) idx = 0;
+                
+                if (direction === Clutter.ScrollDirection.UP) {
+                    idx = (idx - 1 + windows.length) % windows.length;
+                } else if (direction === Clutter.ScrollDirection.DOWN) {
+                    idx = (idx + 1) % windows.length;
+                }
+                
+                windows[idx].activate(global.get_current_time());
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        }
+
+        vfunc_event(event) {
+            try {
+                const type = event.type();
+                if (type === Clutter.EventType.BUTTON_PRESS) {
+                    const button = event.get_button();
+                    if (button === 1) {
+                        if (this._isDraggable) return Clutter.EVENT_PROPAGATE;
+                        return Clutter.EVENT_STOP;
                     }
-                    if (this._clickCallback) {
-                        this._clickCallback(true); 
+                    if (button === 2) {
+                        if (this._app) {
+                             this._app.open_new_window(-1);
+                             return Clutter.EVENT_STOP;
+                        }
+                        if (this.accessible_name === 'Trash') {
+                             Gio.AppInfo.launch_default_for_uri('trash:///', null);
+                             return Clutter.EVENT_STOP;
+                        }
+                        if (this._clickCallback) {
+                            this._clickCallback(true); 
+                            return Clutter.EVENT_STOP;
+                        }
+                    }
+                    if (button === 3) {
+                        if (this._menuCallback) this._menuCallback(this.menu);
+                        this.menu.toggle();
                         return Clutter.EVENT_STOP;
                     }
                 }
-                if (button === 3) {
-                    if (this._menuCallback) this._menuCallback(this.menu);
-                    this.menu.toggle();
-                    return Clutter.EVENT_STOP;
+                if (type === Clutter.EventType.BUTTON_RELEASE) {
+                    const button = event.get_button();
+                    if (button === 1 && !this._dragged && this._clickCallback) {
+                        this._clickCallback();
+                        return Clutter.EVENT_STOP;
+                    }
                 }
+                return super.vfunc_event(event);
+            } catch(e) {
+                return Clutter.EVENT_PROPAGATE;
             }
-            if (type === Clutter.EventType.BUTTON_RELEASE) {
-                const button = event.get_button();
-                if (button === 1 && !this._dragged && this._clickCallback) {
-                    this._clickCallback();
-                    return Clutter.EVENT_STOP;
-                }
-            }
-            return super.vfunc_event(event);
-        } catch(e) {
-            return Clutter.EVENT_PROPAGATE;
         }
     }
-}
-
-const AppPanelButton = GObject.registerClass(
-    { GTypeName: 'LesionAppPanelButton' },
-    AppPanelButtonBase
 );
 
 /**

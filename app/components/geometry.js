@@ -10,7 +10,7 @@ export class GeometryManager extends ExtensionComponent {
         this._saveTimeoutId = null;        // Debounce timer ID
         this._geometryCache = {};          // In-memory mirror of settings
         
-        log("[Geometry] Enabling manager...");
+        log("[Geometry] enabling manager");
         
         // 1. Load initial data
         this._loadCache();

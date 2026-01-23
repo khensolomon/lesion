@@ -1,44 +1,11 @@
 
 /* Test */
-/* .lesion-dock-container .show-apps {
-    background-color: red;
-} */
-
-
-/* .lesion-dock-container .show-apps-vertical-margin {
-    margin: 8px 0;
-}
-.dash-separator {
-    height: 0px !important;
-}
-
-.app-well-app{
-    background-color: blue !important;
-}
-.overview-icon{
-    background-color: green ;
-    
-}
-.show-apps{
-    background-color: yellow !important;
-}
-
-
-.app-running-dot{
-    background-color: red;
-} */
-
-
 
 
 #panel,
 #panel.solid {
-    /* background-gradient-direction: vertical;
-    background-gradient-start: rgba(27, 27, 27, 0.693);
-    background-gradient-end: rgba(0, 0, 0, 0.700); */
     background-color: rgba(37, 37, 37, 0.76);
-box-shadow: 
-        inset 0 -1px 1px rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.4);
 
 }
 
@@ -52,34 +19,4 @@ box-shadow:
   /* Minimum padding; set low to allow compactness */
   -minimum-hpadding: 2px;
 
-  
-
 }
-#panel .panel-button.app {
-    -natural-hpadding: 10px;
-    -minimum-hpadding: 0px;
-}
-
-.keyboard-indicator {
-  background-color: red;
-}
-
-
-
-
-/* .popup-menu, .quick-settings, .popover, .aggregate-menu {
-    border-radius: 5px; 
-}
-.popup-menu {
-    background-color: red;
-} */
-
-/* .quick-toggle{
-    border-radius: 8px;
-    background-color: red;
-} */
-
-/* .popup-menu, .popover, .aggregate-menu {
-    border-radius: 8px !important;
-    background-color: blue;
-} */

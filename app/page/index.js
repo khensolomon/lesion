@@ -128,7 +128,7 @@ export function getPages() {
             id: 'apps',
             title: 'Apps',
             icon: 'applications-development-symbolic',
-            keywords: ['applications', 'bar', 'apps', 'menu', 'grid', 'overview', 'launcher'],
+            keywords: ['applications', 'bar', 'apps', 'applets', 'menu', 'grid', 'overview', 'launcher'],
             ui: createAppsUI
         },
         {

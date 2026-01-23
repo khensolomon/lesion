@@ -229,6 +229,11 @@
     <key name="panel-bg-gradient-dir" type="i"><default>0</default></key>
     <key name="panel-bg-blend-mode" enum="dev.lethil.lesion.BlendMode"><default>'normal'</default></key>
 
+    <key name="panel-blur-enabled" type="b"><default>false</default></key>
+    <key name="panel-blur-sigma" type="i"><default>30</default></key>
+    <key name="panel-margin" type="i"><default>0</default></key>
+    <key name="panel-corner-radius" type="i"><default>0</default></key>
+
     <key name="panel-border-size" type="i"><default>0</default></key>
     <key name="panel-border-style" enum="dev.lethil.lesion.BorderStyle"><default>'solid'</default></key>
     <key name="panel-border-color" type="s"><default>'rgba(255,255,255,0.2)'</default></key>
@@ -243,6 +248,7 @@
     <key name="panel-shadow-spread" type="i"><default>0</default></key>
 
     <!-- Panel: Buttons -->
+    <key name="panel-btn-color" type="s"><default>'rgba(255,255,255,1)'</default></key>
     <key name="panel-btn-radius" type="i"><default>0</default></key>
     <key name="panel-btn-pad-min" type="i"><default>4</default></key>
     <key name="panel-btn-pad-nat" type="i"><default>8</default></key>

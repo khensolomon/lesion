@@ -1,180 +1,176 @@
 /**
  * Configuration structure for Panel Presets.
- * * Each preset object contains metadata and a data object mapping 
- * GSettings keys to their values.
- *
  * @typedef {Object} PanelPreset
- * @property {string} name - The display name of the preset.
- * @property {string} description - A brief description of the style.
- * @property {Object.<string, (string|number|boolean)>} data - Key-value pairs matching the GSchema keys.
- * * Supported Keys in `data`:
- * - panel-enabled (boolean)
- * - panel-bg-color (string rgba)
- * - panel-bg-gradient-enabled (boolean)
- * - panel-bg-gradient-color (string rgba)
- * - panel-bg-gradient-dir (int: 0=vertical, 1=horizontal)
- * - panel-border-size (int)
- * - panel-border-color (string rgba)
- * - panel-border-style (int enum: 0=solid, 1=dotted, 2=dashed, 3=double, 4=groove, 5=ridge, 6=inset, 7=outset, 8=none)
- * - panel-border-bottom-only (boolean)
- * - panel-shadow-enabled (boolean)
- * - panel-shadow-color (string rgba)
- * - panel-shadow-x (int)
- * - panel-shadow-y (int)
- * - panel-shadow-blur (int)
- * - panel-shadow-spread (int)
- * - panel-shadow-inset (boolean)
- * - panel-btn-radius (int)
- * - panel-btn-pad-min (int)
- * - panel-btn-pad-nat (int)
- * - panel-btn-hover-enabled (boolean)
- * - panel-btn-bg-hover (string rgba)
- * - panel-btn-bg-active (string rgba)
- * - popup-radius (int)
- * - popup-border-size (int)
- * - popup-border-color (string rgba)
- * - popup-border-style (int enum)
- * - popup-shadow-enabled (boolean)
- * - popup-shadow-color (string rgba)
- * - popup-shadow-x (int)
- * - popup-shadow-y (int)
- * - popup-shadow-blur (int)
- * - popup-shadow-spread (int)
+ * @property {string} name 
+ * @property {string} description 
+ * @property {Object.<string, (string|number|boolean)>} data
  */
 
-/**
- * List of available panel customization presets.
- * @type {PanelPreset[]}
- */
 export const PanelsPresets = [
     {
         name: 'Default (GNOME)',
         description: 'Reset to standard GNOME appearance',
         data: {
             'panel-enabled': true,
+            'panel-position': 0, 
             'panel-bg-color': 'rgba(0,0,0,1)',
             'panel-bg-gradient-enabled': false,
             'panel-border-size': 0,
             'panel-shadow-enabled': false,
+            'panel-blur-enabled': false,
+            'panel-blur-sigma': 0,
+            'panel-margin': 0,
+            'panel-corner-radius': 0,
+            'panel-btn-color': 'rgba(255,255,255,1)', // Default White
             'panel-btn-radius': 0,
             'panel-btn-pad-min': 4,
             'panel-btn-pad-nat': 8,
             'panel-btn-hover-enabled': false,
             'popup-radius': 12,
             'popup-shadow-enabled': true,
-            'popup-border-size': 0
+            'popup-border-size': 0,
+            
+            // Apps (Default Hidden/Native)
+            'apps-showgrid-enabled': false,
+            'apps-favorites-enabled': false,
+            'apps-running-enabled': false
         }
     },
     {
-        name: 'Chain link',
-        description: 'Modern, floating, semi-transparent dark theme',
+        name: 'MacOS Dark',
+        description: 'Translucent top bar. Clean, legible, and modern.',
         data: {
             'panel-enabled': true,
-            'panel-bg-color': 'rgba(0,0,0,0.86)',
-            'panel-bg-gradient-enabled': true,
-            'panel-bg-gradient-color': 'rgba(0,0,0,0.70)',
-            'panel-bg-gradient-dir': 0, // Vertical
-
-            'panel-border-size': 1,
-            'popup-border-color': 'rgba(255,255,255,0.09)',
-            'panel-border-style': 0, // Solid
-            'panel-border-bottom-only': true,
-
-            'panel-shadow-enabled': true,
-            'panel-shadow-color': 'rgba(0,0,0,0.76)',
-            'panel-shadow-x': 0,
-            'panel-shadow-y': -2,
-            'panel-shadow-blur': 3,
-            'panel-shadow-spread': 0,
-
-            'panel-btn-radius': 8,
-            'panel-btn-pad-min': 8,
-            'panel-btn-pad-nat': 8,
-            'panel-btn-hover-enabled': false,
-            'popup-radius': 8,
-            'popup-border-size': 1,
-            'popup-border-color': 'rgba(255,255,255,0.1)',
-            'popup-shadow-enabled': true
-        }
-    },
-    {
-        name: 'Glassy Dark',
-        description: 'Modern, floating, semi-transparent dark theme',
-        data: {
-            'panel-enabled': true,
-            'panel-bg-color': 'rgba(30,30,30,0.85)',
+            'panel-position': 0, // Top
+            'panel-bg-color': 'rgba(28, 28, 30, 0.75)', 
             'panel-bg-gradient-enabled': false,
+            'panel-blur-enabled': true,
+            'panel-blur-sigma': 0,
+            
             'panel-border-size': 1,
             'panel-border-color': 'rgba(255,255,255,0.1)',
-            'panel-border-style': 0, // Solid
-            'panel-border-bottom-only': false,
+            'panel-border-style': 0,
+            'panel-border-bottom-only': true, 
+            
             'panel-shadow-enabled': true,
-            'panel-shadow-color': 'rgba(0,0,0,0.5)',
-            'panel-shadow-y': 4,
-            'panel-shadow-blur': 12,
-            'panel-btn-radius': 12,
-            'panel-btn-pad-min': 8,
-            'panel-btn-pad-nat': 12,
+            'panel-shadow-color': 'rgba(0,0,0,0.12)',
+            'panel-shadow-y': 1,
+            'panel-shadow-blur': 2,
+            
+            'panel-margin': 0,
+            'panel-corner-radius': 0,
+
+            'panel-btn-color': 'rgba(255,255,255,1)', // White Text
+            'panel-btn-radius': 5,
+            'panel-btn-pad-min': 4,
+            'panel-btn-pad-nat': 10,
             'panel-btn-hover-enabled': true,
-            'panel-btn-bg-hover': 'rgba(255,255,255,0.15)',
-            'panel-btn-bg-active': 'rgba(255,255,255,0.25)',
-            'popup-radius': 16,
+            'panel-btn-bg-hover': 'rgba(255,255,255,0.1)',
+            'panel-btn-bg-active': 'rgba(255,255,255,0.2)',
+
+            'popup-radius': 10,
             'popup-border-size': 1,
             'popup-border-color': 'rgba(255,255,255,0.1)',
-            'popup-shadow-enabled': true
+            'popup-shadow-enabled': true,
+            'popup-shadow-color': 'rgba(0,0,0,0.3)',
+
+            'apps-showgrid-enabled': true, 
+            'apps-showgrid-icon': 'start-here-symbolic', 
+            'apps-showgrid-text': '', 
+            'apps-favorites-enabled': true, 
+            'apps-running-enabled': true
         }
     },
     {
-        name: 'Floating Light (Mac-ish)',
-        description: 'Bright, translucent with soft shadows',
+        name: 'Daylight (Light)',
+        description: 'White panel with black icons and text. Great for light wallpapers.',
         data: {
             'panel-enabled': true,
-            'panel-bg-color': 'rgba(255,255,255,0.7)',
-            'panel-bg-gradient-enabled': true,
-            'panel-bg-gradient-color': 'rgba(240,240,240,0.8)',
-            'panel-bg-gradient-dir': 0, // Vertical
+            'panel-position': 0, // Top
+            'panel-bg-color': 'rgba(255, 255, 255, 0.85)', // White background
+            'panel-bg-gradient-enabled': false,
+            'panel-blur-enabled': true,
+            'panel-blur-sigma': 0,
+            
             'panel-border-size': 1,
-            'panel-border-color': 'rgba(255,255,255,0.5)',
+            'panel-border-color': 'rgba(0,0,0,0.1)', // Subtle dark border
             'panel-border-style': 0,
-            'panel-border-bottom-only': false,
+            'panel-border-bottom-only': true, 
+            
             'panel-shadow-enabled': true,
-            'panel-shadow-color': 'rgba(0,0,0,0.15)',
+            'panel-shadow-color': 'rgba(0,0,0,0.05)',
             'panel-shadow-y': 2,
-            'panel-shadow-blur': 10,
-            'panel-btn-radius': 8,
-            'panel-btn-pad-min': 6,
+            'panel-shadow-blur': 5,
+            
+            'panel-margin': 0,
+            'panel-corner-radius': 0,
+
+            // KEY CHANGE: BLACK TEXT
+            'panel-btn-color': 'rgba(0,0,0,0.85)', 
+            
+            'panel-btn-radius': 5,
+            'panel-btn-pad-min': 4,
             'panel-btn-pad-nat': 10,
             'panel-btn-hover-enabled': true,
             'panel-btn-bg-hover': 'rgba(0,0,0,0.05)',
             'panel-btn-bg-active': 'rgba(0,0,0,0.1)',
-            'popup-radius': 12,
-            'popup-border-size': 0,
-            'popup-shadow-enabled': true
+
+            'popup-radius': 10,
+            'popup-border-size': 1,
+            'popup-border-color': 'rgba(0,0,0,0.1)',
+            'popup-shadow-enabled': true,
+            'popup-shadow-color': 'rgba(0,0,0,0.1)',
+
+            'apps-showgrid-enabled': true, 
+            'apps-showgrid-icon': 'start-here-symbolic', 
+            'apps-showgrid-text': '', 
+            'apps-favorites-enabled': true, 
+            'apps-running-enabled': true
         }
     },
     {
-        name: 'Retro 95',
-        description: 'Classic gray bevels and sharp corners',
+        name: 'Windows 11',
+        description: 'Bottom taskbar style with centered feel and high contrast.',
         data: {
             'panel-enabled': true,
-            'panel-bg-color': 'rgb(192,192,192)',
+            'panel-position': 2, // Bottom
+            // Dark Mica-like background
+            'panel-bg-color': 'rgba(32, 32, 32, 0.90)', 
             'panel-bg-gradient-enabled': false,
-            'panel-border-size': 2,
-            'panel-border-color': 'white',
-            'panel-border-style': 7, // Outset
-            'panel-border-bottom-only': false,
+            'panel-blur-enabled': true,
+            'panel-blur-sigma': 0, 
+            
+            // 1px Border at the TOP edge (logic handles this)
+            'panel-border-size': 1,
+            'panel-border-color': 'rgba(255,255,255,0.08)', 
+            'panel-border-style': 0,
+            'panel-border-bottom-only': true, 
+
             'panel-shadow-enabled': false,
-            'panel-btn-radius': 0,
-            'panel-btn-pad-min': 4,
-            'panel-btn-pad-nat': 6,
+            
+            'panel-margin': 0, 
+            'panel-corner-radius': 0,
+
+            'panel-btn-color': 'rgba(255,255,255,1)',
+            'panel-btn-radius': 4,
+            'panel-btn-pad-min': 6,
+            'panel-btn-pad-nat': 10,
             'panel-btn-hover-enabled': true,
-            'panel-btn-bg-hover': 'rgb(220,220,220)',
-            'panel-btn-bg-active': 'rgb(128,128,128)',
-            'popup-radius': 0,
-            'popup-border-size': 2,
-            'popup-border-color': 'rgb(255,255,255)',
-            'popup-border-style': 7, // Outset
-            'popup-shadow-enabled': false
+            'panel-btn-bg-hover': 'rgba(255,255,255,0.05)',
+            'panel-btn-bg-active': 'rgba(255,255,255,0.08)',
+
+            'popup-radius': 8,
+            'popup-border-size': 1,
+            'popup-border-color': 'rgba(255,255,255,0.08)',
+            'popup-shadow-enabled': true,
+
+            // Taskbar Elements
+            'apps-showgrid-enabled': true,
+            'apps-showgrid-icon': 'view-grid-symbolic',
+            'apps-favorites-enabled': true,
+            'apps-running-enabled': true,
+            'apps-running-pos': 0,
+            'apps-running-index': 0
         }
     },
     {
@@ -182,28 +178,35 @@ export const PanelsPresets = [
         description: 'High contrast black with colored glowing borders',
         data: {
             'panel-enabled': true,
-            'panel-bg-color': 'rgba(10,10,10,0.95)',
+            'panel-position': 0,
+            'panel-bg-color': 'rgba(5,5,5,0.95)',
             'panel-bg-gradient-enabled': false,
             'panel-border-size': 2,
             'panel-border-color': 'rgba(0,255,255,1)', // Cyan
             'panel-border-style': 0,
             'panel-border-bottom-only': true,
             'panel-shadow-enabled': true,
-            'panel-shadow-color': 'rgba(0,255,255,0.6)', // Cyan glow
+            'panel-shadow-color': 'rgba(0,255,255,0.5)',
             'panel-shadow-y': 0,
             'panel-shadow-blur': 15,
-            'panel-shadow-spread': 2,
+            'panel-blur-enabled': false,
+            'panel-blur-sigma': 0,
+            'panel-btn-color': 'rgba(0,255,255,1)', // Cyan Text
             'panel-btn-radius': 0,
             'panel-btn-pad-min': 10,
             'panel-btn-pad-nat': 15,
             'panel-btn-hover-enabled': true,
-            'panel-btn-bg-hover': 'rgba(0,255,255,0.1)',
-            'panel-btn-bg-active': 'rgba(0,255,255,0.2)',
+            'panel-btn-bg-hover': 'rgba(0,255,255,0.15)',
+            'panel-btn-bg-active': 'rgba(0,255,255,0.25)',
             'popup-radius': 0,
             'popup-border-size': 1,
             'popup-border-color': 'rgba(0,255,255,1)',
             'popup-shadow-enabled': true,
-            'popup-shadow-color': 'rgba(0,255,255,0.3)'
+            'popup-shadow-color': 'rgba(0,255,255,0.2)',
+            
+            'apps-showgrid-enabled': true,
+            'apps-favorites-enabled': true,
+            'apps-running-enabled': true
         }
     }
 ];

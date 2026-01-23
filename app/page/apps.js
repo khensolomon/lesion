@@ -3,6 +3,7 @@ import Gtk from 'gi://Gtk';
 import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import { AppConfig } from '../config.js';
 
 /**
@@ -501,58 +502,113 @@ export function createAppsUI() {
      */
     const favGroup = new Adw.PreferencesGroup({
         title: 'Manage Favorites',
-        description: 'Reorder your pinned apps in the favorites list.'
+        description: 'Drag and drop items to reorder.'
     });
     addGroupIcon(favGroup, 'view-sort-ascending-symbolic');
     page.add(favGroup);
+
+    // Using a ListBox with "boxed-list" style matches Adwaita preferences styling
+    // while giving us control over row logic for DND.
+    const favList = new Gtk.ListBox({
+        selection_mode: Gtk.SelectionMode.NONE,
+        css_classes: ['boxed-list']
+    });
+    favGroup.add(favList);
 
     const shellSettings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
     
     /**
      * Logic: Refresh Favorites List
      * Rebuilds the UI rows based on the current favorites list in GSettings.
-     * @param {string[]} [manualList] - Optional manual list to use instead of fetching from settings.
      */
-    const refreshFavs = (manualList = null) => {
-        let child = favGroup.get_first_child();
+    const refreshFavs = () => {
+        // Clear existing children
+        let child = favList.get_first_child();
         while(child) {
             const next = child.get_next_sibling();
-            favGroup.remove(child);
+            favList.remove(child);
             child = next;
         }
 
-        const favs = manualList || shellSettings.get_strv('favorite-apps');
+        const favs = shellSettings.get_strv('favorite-apps');
         
         favs.forEach((appId, index) => {
-            const row = new Adw.ActionRow({ title: appId });
+            const row = new Adw.ActionRow();
             
-            if (index > 0) {
-                const upBtn = new Gtk.Button({ icon_name: 'go-up-symbolic', has_frame: false, valign: Gtk.Align.CENTER });
-                upBtn.connect('clicked', () => {
-                    const newFavs = [...favs];
-                    [newFavs[index - 1], newFavs[index]] = [newFavs[index], newFavs[index - 1]];
-                    shellSettings.set_strv('favorite-apps', newFavs);
-                    refreshFavs(newFavs);
-                });
-                row.add_suffix(upBtn);
+            // 1. Fetch App Info (Name & Icon)
+            let name = appId;
+            let gicon = new Gio.ThemedIcon({ name: 'application-x-executable-symbolic' });
+            
+            try {
+                const appInfo = Gio.DesktopAppInfo.new(appId);
+                if (appInfo) {
+                    name = appInfo.get_name();
+                    const icon = appInfo.get_icon();
+                    if (icon) gicon = icon;
+                }
+            } catch (e) {
+                // Fallback to basic info if app not found
             }
 
-            if (index < favs.length - 1) {
-                const downBtn = new Gtk.Button({ icon_name: 'go-down-symbolic', has_frame: false, valign: Gtk.Align.CENTER });
-                downBtn.connect('clicked', () => {
-                    const newFavs = [...favs];
-                    [newFavs[index + 1], newFavs[index]] = [newFavs[index], newFavs[index + 1]];
-                    shellSettings.set_strv('favorite-apps', newFavs);
-                    refreshFavs(newFavs);
-                });
-                row.add_suffix(downBtn);
-            }
+            row.title = name;
+            row.subtitle = appId;
+            row.add_prefix(new Gtk.Image({ gicon: gicon, pixel_size: 32 }));
 
-            favGroup.add(row);
+            // 2. Drag handle icon (visual cue)
+            const dragIcon = new Gtk.Image({ icon_name: 'list-drag-handle-symbolic' });
+            dragIcon.add_css_class('dim-label');
+            row.add_suffix(dragIcon);
+
+            // 3. DND Controller: Source (Draggable)
+            const dragSource = new Gtk.DragSource({ actions: Gdk.DragAction.MOVE });
+            dragSource.connect('prepare', (source, x, y) => {
+                // We drag the index of the item as a string (simplest payload for GJS)
+                return Gdk.ContentProvider.new_for_value(index.toString());
+            });
+            // Visual feedback while dragging
+            dragSource.connect('drag-begin', (source, drag) => {
+                const paintable = new Gtk.WidgetPaintable({ widget: row });
+                source.set_icon(paintable, 0, 0);
+            });
+            row.add_controller(dragSource);
+
+            // 4. DND Controller: Target (Droppable)
+            const dropTarget = new Gtk.DropTarget({
+                actions: Gdk.DragAction.MOVE,
+                formats: Gdk.ContentFormats.new_for_gtype(GObject.TYPE_STRING)
+            });
+            
+            dropTarget.connect('drop', (target, value, x, y) => {
+                // Parse indices
+                const sourceIndex = parseInt(value);
+                const targetIndex = index;
+
+                if (sourceIndex === targetIndex || isNaN(sourceIndex)) return false;
+
+                // Reorder array
+                const newFavs = [...favs];
+                const [movedItem] = newFavs.splice(sourceIndex, 1);
+                newFavs.splice(targetIndex, 0, movedItem);
+
+                // Save & Refresh
+                shellSettings.set_strv('favorite-apps', newFavs);
+                refreshFavs(); 
+                return true;
+            });
+            row.add_controller(dropTarget);
+
+            favList.append(row);
         });
     };
 
+    // Initial load
     refreshFavs();
+
+    // Listen for external changes (e.g. if user unpins via Shell)
+    const id = shellSettings.connect('changed::favorite-apps', refreshFavs);
+    // Note: We don't have a clean way to disconnect this signal when the page is destroyed 
+    // in this specific functional structure, but in Prefs windows, the process usually ends 
+    // when the window closes, so it's acceptable.
     
     return page;
 }

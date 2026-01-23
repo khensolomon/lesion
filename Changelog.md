@@ -5,13 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project adheres to Semantic Versioning.
 
-## [21-33] - 2026-01-10
+## [21-34] - 2026-01-23
 
 Improve
 
 - apps
+  - refactor to modern ES6 class syntax with GObject registration, and restructure the preferences page to use a class-based approach with a compatibility wrapper
+  - Drag and Drop (DND) controllers for sorting
 - Replace the hover scaling animation with a smoother opacity transition.
 - corners code
+- Panels (style)
+  - ES6
+  - Backward compatibility wrapper
+  - Copyable setting for presets
+- Log message [*] enabling manager
 
 Remove
 

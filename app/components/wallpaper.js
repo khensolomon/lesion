@@ -45,7 +45,7 @@ export class WallpaperManager extends ExtensionComponent {
         const enabled = this.getSettings().get_boolean('wallpaper-enabled');
 
         if (enabled) {
-            log("WallpaperManager: Enabled");
+            log("[Wallpaper] enabling manager");
             if (!this._featureSignals) {
                 this._featureSignals = [];
                 const s = this.getSettings();
@@ -72,7 +72,7 @@ export class WallpaperManager extends ExtensionComponent {
             this._updateEffects();
 
         } else {
-            log("WallpaperManager: Disabled");
+            log("Wallpaper disabling manager");
             this._cleanupFeatures();
         }
     }

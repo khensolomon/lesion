@@ -28,7 +28,7 @@ export const AppConfig = {
         description: '',
         url: '',
         links: {},
-        "settings-schema": "", // Standard Key
+        "settings-schema": "dev.lethil.lesion", // Default to match XML
         "developer-name": ""
     },
     
@@ -56,10 +56,8 @@ export const AppConfig = {
     },
 
     get schemaId() {
-        // FIX: Prioritize the standard 'settings-schema' key which usually matches the XML.
-        // Fallback to a hardcoded default.
-        return this.metadata["settings-schema"] || 
-               "org.gnome.shell.extensions.lesion";
+        // Critical: Must match schemas/dev.lethil.lesion.gschema.xml
+        return this.metadata["settings-schema"] || "dev.lethil.lesion";
     },
     
     get developer() {

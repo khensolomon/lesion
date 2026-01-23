@@ -1,38 +1,43 @@
 import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { ExtensionComponent } from './base.js';
 import { log, logError } from '../util/logger.js';
+import { AppConfig } from '../config.js'; // Critical Import for Schema Consistency
 
 export class PanelsManager extends ExtensionComponent {
     
     constructor(extension) {
         super(extension);
-        this._buttonSignals = new Map(); // Store signal IDs for buttons
-        this._boxSignals = []; // Store signal IDs for panel boxes
+        this._buttonSignals = new Map();
+        this._boxSignals = []; 
+        this._blurEffect = null;
+        this._monitorsChangedId = 0;
+        this._refreshTimeoutId = 0;
+
+        // FORCE CONSISTENCY:
+        // Create a dedicated settings object using the exact ID from AppConfig.
+        // This ensures backend matches frontend, ignoring metadata.json defaults if they differ.
+        this._settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
     }
 
     onEnable() {
         this._savedPanelStyle = Main.panel.get_style();
         
         const keys = [
-            // Master Switch
             'panel-enabled',
-            
-            // Panel Bar
             'panel-position',
-            'panel-bg-color', 'panel-bg-gradient-enabled', 
-            'panel-bg-gradient-color', 'panel-bg-gradient-dir',
+            'panel-bg-color', 'panel-bg-gradient-enabled', 'panel-bg-gradient-color', 'panel-bg-gradient-dir',
             'panel-border-size', 'panel-border-color', 'panel-border-style', 'panel-border-bottom-only',
             'panel-shadow-enabled', 'panel-shadow-color', 
             'panel-shadow-x', 'panel-shadow-y', 'panel-shadow-blur', 'panel-shadow-spread', 'panel-shadow-inset',
-
-            // Panel Buttons
+            'panel-blur-enabled', 'panel-blur-sigma', 
+            'panel-margin', 'panel-corner-radius',
+            'panel-btn-color',
             'panel-btn-radius', 'panel-btn-pad-min', 'panel-btn-pad-nat', 
             'panel-btn-bg-hover', 'panel-btn-bg-active', 'panel-btn-hover-enabled',
-
-            // Popup Styles
             'popup-radius', 
             'popup-shadow-enabled', 'popup-shadow-color', 
             'popup-shadow-x', 'popup-shadow-y', 'popup-shadow-blur', 'popup-shadow-spread',
@@ -40,49 +45,115 @@ export class PanelsManager extends ExtensionComponent {
         ];
 
         keys.forEach(key => {
-            this.observe(`changed::${key}`, () => this._refreshAll());
+            // Note: We bind to this._settings, not this.getSettings()
+            this._settings.connect(`changed::${key}`, () => this._queueRefresh());
         });
 
-        // NOTE: In GNOME 45+/46+, Clutter.Actor (St.BoxLayout) no longer emits 'actor-added'/'actor-removed'.
-        // We skip dynamic monitoring to prevent crashes. Styling is applied to all current items.
-        
-        log('PanelsManager enabled. Applying initial styles...');
-        this._refreshAll();
+        this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => {
+            this._applyPosition();
+        });
+
+        // DEBUG LOG: Verify what the extension actually sees on startup
+        const startColor = this._settings.get_string('panel-bg-color');
+        log(`[Panels] Enabled. Schema: ${AppConfig.schemaId}. Loaded BG Color: ${startColor}`);
+
+        this._queueRefresh();
     }
 
     onDisable() {
-        // Clear box signals if we ever re-enable them in future versions
+        if (this._refreshTimeoutId) {
+            GLib.source_remove(this._refreshTimeoutId);
+            this._refreshTimeoutId = 0;
+        }
+
+        // Cleanup settings signals
+        if (this._settings) {
+            this._settings.run_dispose(); 
+            // Note: In newer GJS we usually just let it GC, but disconnecting signals is good practice if we stored IDs.
+            // Since we used connect-object or simple closures, GC handles most, but here we just stop listening.
+            // Actually, for Gio.Settings, we usually don't need explicit disconnect if the object is dropped,
+            // but since we keep the object, we just ignore signals in _queueRefresh via _isEnabled check.
+        }
+
         if (this._boxSignals) {
-            this._boxSignals.forEach(sig => sig.actor.disconnect(sig.id));
+            this._boxSignals.forEach(sig => {
+                if (this._isValid(sig.actor)) {
+                    try {
+                        sig.actor.disconnect(sig.id);
+                    } catch (e) {}
+                }
+            });
             this._boxSignals = [];
         }
 
+        if (this._monitorsChangedId) {
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = 0;
+        }
+
         this._cleanupButtonSignals();
+        this._removeBlur();
 
         if (Main.panel) {
             Main.panel.set_style(this._savedPanelStyle || null);
+            const monitor = Main.layoutManager.primaryMonitor;
+            if (monitor) Main.layoutManager.panelBox.y = monitor.y;
         }
 
         this._iterateMenus((menu) => this._resetMenuStyle(menu));
         this._iterateButtons((btn) => {
-            btn.set_style(null);
-            delete btn._baseCss;
+            if (this._isValid(btn)) {
+                btn.set_style(null);
+                delete btn._baseCss;
+            }
+        });
+    }
+
+    // Helper: Safely check if an actor is alive
+    _isValid(actor) {
+        if (!actor) return false;
+        try {
+            return actor.get_parent() !== undefined; 
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Debounce
+    _queueRefresh() {
+        if (this._refreshTimeoutId) {
+            GLib.source_remove(this._refreshTimeoutId);
+        }
+        this._refreshTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+            if (!this._isEnabled) return GLib.SOURCE_REMOVE;
+            this._refreshAll();
+            this._refreshTimeoutId = 0;
+            return GLib.SOURCE_REMOVE;
         });
     }
 
     _refreshAll() {
-        if (!this.getSettings().get_boolean('panel-enabled')) {
+        // Use our consistent settings object
+        if (!this._settings.get_boolean('panel-enabled')) {
             if (Main.panel) Main.panel.set_style(this._savedPanelStyle || null);
-            this._iterateButtons((btn) => btn.set_style(null));
+            const monitor = Main.layoutManager.primaryMonitor;
+            if (monitor) Main.layoutManager.panelBox.y = monitor.y;
+            this._removeBlur();
+            this._iterateButtons((btn) => {
+                if (this._isValid(btn)) {
+                    btn.set_style(null);
+                    btn.queue_relayout();
+                }
+            });
             this._cleanupButtonSignals();
             return;
         }
 
         this._applyPanelBarStyles();
+        this._applyPosition();
         this._applyButtonStaticStyles();
         this._refreshButtonListeners();
         
-        // Refresh menus (some might be open)
         this._iterateMenus((menu) => {
             this._styleSingleMenu(menu);
             if (menu.isOpen) {
@@ -92,58 +163,105 @@ export class PanelsManager extends ExtensionComponent {
         });
     }
 
-    // --- Panel Bar Styling ---
+    // --- Position ---
+    _applyPosition() {
+        if (!Main.layoutManager || !Main.layoutManager.panelBox) return;
 
+        const pos = this._settings.get_enum('panel-position'); 
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (!monitor) return;
+
+        Main.layoutManager.panelBox.x = monitor.x;
+
+        if (pos === 2) { // Bottom
+            const panelHeight = Main.layoutManager.panelBox.height || 32; 
+            Main.layoutManager.panelBox.y = monitor.y + monitor.height - panelHeight;
+        } else {
+            Main.layoutManager.panelBox.y = monitor.y;
+        }
+    }
+
+    // --- Blur ---
+    _removeBlur() {
+        if (this._blurEffect) {
+            if (this._isValid(Main.panel)) {
+                try {
+                    Main.panel.remove_effect(this._blurEffect);
+                } catch (e) {}
+            }
+            this._blurEffect = null;
+        }
+    }
+
+    _applyBlur() {
+        const enabled = this._settings.get_boolean('panel-blur-enabled');
+        const radius = this._settings.get_int('panel-blur-sigma'); 
+
+        if (!enabled || radius <= 0) {
+            this._removeBlur();
+            return;
+        }
+
+        if (!this._isValid(Main.panel)) return;
+
+        if (!this._blurEffect) {
+            this._blurEffect = new Shell.BlurEffect({
+                brightness: 1.0,
+                radius: radius, 
+                mode: Shell.BlurMode.ACTOR
+            });
+            Main.panel.add_effect(this._blurEffect);
+        } else {
+            this._blurEffect.radius = radius; 
+        }
+    }
+
+    // --- Panel Styling ---
     _applyPanelBarStyles() {
-        const settings = this.getSettings();
+        this._applyBlur();
 
-        // 1. Background
-        const bgColor = settings.get_string('panel-bg-color');
-        const useGradient = settings.get_boolean('panel-bg-gradient-enabled');
-        const gradColor = settings.get_string('panel-bg-gradient-color');
-        
-        // FIX: panel-bg-gradient-dir is type 'i' (int), not enum in schema
-        const gradDir = settings.get_int('panel-bg-gradient-dir'); 
-
-        // 2. Border
-        const borderSize = settings.get_int('panel-border-size');
-        const borderColor = settings.get_string('panel-border-color');
-        const borderStyle = settings.get_enum('panel-border-style'); // 0=solid
-        const borderBottom = settings.get_boolean('panel-border-bottom-only');
-
-        // 3. Shadow
-        const shadowEnabled = settings.get_boolean('panel-shadow-enabled');
-        const shadowColor = settings.get_string('panel-shadow-color');
-        const sX = settings.get_int('panel-shadow-x');
-        const sY = settings.get_int('panel-shadow-y');
-        const sBlur = settings.get_int('panel-shadow-blur');
-        const sSpread = settings.get_int('panel-shadow-spread');
-        const sInset = settings.get_boolean('panel-shadow-inset');
+        const bgColor = this._settings.get_string('panel-bg-color');
+        const useGradient = this._settings.get_boolean('panel-bg-gradient-enabled');
+        const gradColor = this._settings.get_string('panel-bg-gradient-color');
+        const gradDir = this._settings.get_int('panel-bg-gradient-dir'); 
+        const margin = this._settings.get_int('panel-margin');
+        const cornerRadius = this._settings.get_int('panel-corner-radius');
+        const position = this._settings.get_enum('panel-position'); 
+        const borderSize = this._settings.get_int('panel-border-size');
+        const borderColor = this._settings.get_string('panel-border-color');
+        const borderStyle = this._settings.get_enum('panel-border-style'); 
+        const borderBottomOnly = this._settings.get_boolean('panel-border-bottom-only');
+        const shadowEnabled = this._settings.get_boolean('panel-shadow-enabled');
+        const shadowColor = this._settings.get_string('panel-shadow-color');
+        const sX = this._settings.get_int('panel-shadow-x');
+        const sY = this._settings.get_int('panel-shadow-y');
+        const sBlur = this._settings.get_int('panel-shadow-blur');
+        const sSpread = this._settings.get_int('panel-shadow-spread');
+        const sInset = this._settings.get_boolean('panel-shadow-inset');
 
         let css = '';
 
-        // --- ST CSS COMPLIANCE ---
-        // St does NOT support 'background-image: linear-gradient(...)'. 
-        // We must use 'background-gradient-direction', 'start', 'end'.
+        if (margin > 0) css += `margin: ${margin}px; margin-bottom: 0; `;
+        if (cornerRadius > 0) css += `border-radius: ${cornerRadius}px; `;
 
         if (useGradient) {
             const dir = gradDir === 0 ? 'vertical' : 'horizontal';
-            css += `background-gradient-direction: ${dir}; `;
-            css += `background-gradient-start: ${bgColor}; `;
-            css += `background-gradient-end: ${gradColor}; `;
+            css += `background-gradient-direction: ${dir}; background-gradient-start: ${bgColor}; background-gradient-end: ${gradColor}; `;
         } else {
-            css += `background-color: ${bgColor}; `;
-            css += `background-gradient-direction: none; `;
+            css += `background-color: ${bgColor}; background-gradient-direction: none; `;
         }
         
-        // Border
         const styles = ['solid','dotted','dashed','double','groove','ridge','inset','outset','none'];
         const bStyleStr = styles[borderStyle] || 'solid';
         
         if (borderSize > 0 && borderStyle !== 8) {
             css += `border-color: ${borderColor}; border-style: ${bStyleStr}; `;
-            if (borderBottom) {
-                css += `border-bottom-width: ${borderSize}px; border-top-width: 0; border-left-width: 0; border-right-width: 0; `;
+            if (borderBottomOnly) {
+                if (position === 2) { 
+                    css += `border-top-width: ${borderSize}px; border-bottom-width: 0; border-left-width: 0; border-right-width: 0; `;
+                } else { 
+                    css += `border-bottom-width: ${borderSize}px; border-top-width: 0; border-left-width: 0; border-right-width: 0; `;
+                }
             } else {
                 css += `border-width: ${borderSize}px; `;
             }
@@ -151,7 +269,6 @@ export class PanelsManager extends ExtensionComponent {
             css += `border-width: 0; `;
         }
 
-        // Shadow
         if (shadowEnabled) {
             const inset = sInset ? 'inset' : '';
             css += `box-shadow: ${inset} ${sX}px ${sY}px ${sBlur}px ${sSpread}px ${shadowColor}; `;
@@ -159,167 +276,208 @@ export class PanelsManager extends ExtensionComponent {
             css += `box-shadow: none; `;
         }
 
-        // log(`[Panels] Generated CSS: ${css}`);
-        Main.panel.set_style(css);
+        if (this._isValid(Main.panel)) {
+            Main.panel.set_style(css);
+        }
     }
 
-    // --- Panel Button Styling ---
+    // --- Buttons ---
 
     _iterateButtons(callback) {
         const boxes = [Main.panel._leftBox, Main.panel._centerBox, Main.panel._rightBox];
         boxes.forEach(box => {
-            if (!box) return;
-            box.get_children().forEach(actor => {
-                if (actor.has_style_class_name('panel-button')) {
-                    callback(actor);
-                } else if (actor.get_first_child) {
-                    // Try to find nested button (e.g. quick settings often wraps)
-                    const child = actor.get_first_child();
-                    if (child && child.has_style_class_name && child.has_style_class_name('panel-button')) {
-                        callback(child);
+            if (!this._isValid(box)) return;
+            
+            let children;
+            try {
+                children = box.get_children();
+            } catch (e) { return; }
+
+            children.forEach(actor => {
+                if (!this._isValid(actor)) return;
+                try {
+                    if (actor.has_style_class_name('panel-button')) {
+                        callback(actor);
+                    } else if (actor.get_first_child) {
+                        const child = actor.get_first_child();
+                        if (this._isValid(child) && child.has_style_class_name && child.has_style_class_name('panel-button')) {
+                            callback(child);
+                        }
                     }
-                }
+                } catch (e) {}
             });
         });
     }
 
     _applyButtonStaticStyles() {
-        const radius = this.getSettings().get_int('panel-btn-radius');
-        const minPad = this.getSettings().get_int('panel-btn-pad-min');
-        const natPad = this.getSettings().get_int('panel-btn-pad-nat');
+        const radius = this._settings.get_int('panel-btn-radius');
+        const minPad = this._settings.get_int('panel-btn-pad-min');
+        const natPad = this._settings.get_int('panel-btn-pad-nat');
+        const btnColor = this._settings.get_string('panel-btn-color');
 
-        // St specific properties for padding
-        const css = `border-radius: ${radius}px; -natural-hpadding: ${natPad}px; -minimum-hpadding: ${minPad}px;`;
+        const css = `color: ${btnColor}; border-radius: ${radius}px; -natural-hpadding: ${natPad}px; -minimum-hpadding: ${minPad}px;`;
 
         this._iterateButtons((btn) => {
-            btn.set_style(css);
-            btn._baseCss = css; 
+            try {
+                btn.set_style(css);
+                btn.queue_relayout(); 
+                btn._baseCss = css; 
+            } catch (e) {}
         });
     }
 
     _cleanupButtonSignals() {
-        this._buttonSignals.forEach((sigs, actor) => {
-            sigs.forEach(id => actor.disconnect(id));
-        });
+        for (const [actor, sigs] of this._buttonSignals) {
+            if (this._isValid(actor)) {
+                sigs.forEach(id => {
+                    try {
+                        actor.disconnect(id);
+                    } catch (e) {}
+                });
+            }
+        }
         this._buttonSignals.clear();
     }
 
     _refreshButtonListeners() {
         this._cleanupButtonSignals(); 
-        const enabled = this.getSettings().get_boolean('panel-btn-hover-enabled');
-        if (!enabled) return;
-
-        const hoverBg = this.getSettings().get_string('panel-btn-bg-hover');
-        const activeBg = this.getSettings().get_string('panel-btn-bg-active');
+        const enabled = this._settings.get_boolean('panel-btn-hover-enabled');
+        
+        const hoverBg = this._settings.get_string('panel-btn-bg-hover');
+        const activeBg = this._settings.get_string('panel-btn-bg-active');
 
         this._iterateButtons((btn) => {
             const sigs = [];
-            
-            // Mouse Enter
-            sigs.push(btn.connect('notify::hover', () => {
-                if (btn.hover) {
-                    btn.set_style(`${btn._baseCss || ''} background-color: ${hoverBg};`);
-                } else {
-                    btn.set_style(btn._baseCss || null);
+            const base = btn._baseCss || '';
+
+            try {
+                if (enabled) {
+                    const idHover = btn.connect('notify::hover', () => {
+                        if (!this._isValid(btn)) return;
+                        try {
+                            if (btn.hover) {
+                                btn.set_style(`${base} background-color: ${hoverBg};`);
+                            } else {
+                                btn.set_style(base || null);
+                            }
+                        } catch (e) {}
+                    });
+                    sigs.push(idHover);
+
+                    const idPress = btn.connect('button-press-event', () => {
+                        if (!this._isValid(btn)) return false;
+                        try {
+                            btn.set_style(`${base} background-color: ${activeBg}; box-shadow: inset 0 0 4px rgba(0,0,0,0.2);`);
+                        } catch (e) {}
+                        return false; 
+                    });
+                    sigs.push(idPress);
+
+                    const idRelease = btn.connect('button-release-event', () => {
+                        if (!this._isValid(btn)) return false;
+                        try {
+                            if (btn.hover) {
+                                btn.set_style(`${base} background-color: ${hoverBg};`);
+                            } else {
+                                btn.set_style(base || null);
+                            }
+                        } catch (e) {}
+                        return false;
+                    });
+                    sigs.push(idRelease);
                 }
-            }));
 
-            // Click/Active emulation
-            sigs.push(btn.connect('button-press-event', () => {
-                btn.set_style(`${btn._baseCss || ''} background-color: ${activeBg}; box-shadow: inset 0 0 4px rgba(0,0,0,0.2);`);
-                return false; 
-            }));
+                // Destroy listener for self-cleanup
+                const idDestroy = btn.connect('destroy', () => {
+                    this._buttonSignals.delete(btn);
+                });
+                sigs.push(idDestroy);
 
-            sigs.push(btn.connect('button-release-event', () => {
-                 if (btn.hover) {
-                    btn.set_style(`${btn._baseCss || ''} background-color: ${hoverBg};`);
-                 } else {
-                    btn.set_style(btn._baseCss || null);
-                 }
-                 return false;
-            }));
-
-            this._buttonSignals.set(btn, sigs);
+                this._buttonSignals.set(btn, sigs);
+            } catch (e) {}
         });
     }
-
-    // --- Popup Menus ---
 
     _iterateMenus(callback) {
         if (Main.panel.statusArea) {
             for (const key in Main.panel.statusArea) {
-                const indicator = Main.panel.statusArea[key];
-                if (indicator && indicator.menu) callback(indicator.menu);
+                try {
+                    const indicator = Main.panel.statusArea[key];
+                    if (indicator && indicator.menu) callback(indicator.menu);
+                } catch (e) {}
             }
         }
         if (Main.panel.menuManager && Main.panel.menuManager._menus) {
-            Main.panel.menuManager._menus.forEach(menu => callback(menu));
+            Main.panel.menuManager._menus.forEach(menu => {
+                try {
+                    callback(menu);
+                } catch (e) {}
+            });
         }
     }
 
     _getBoxPointer(menu) {
-        if (menu.boxPointer) return menu.boxPointer;
-        if (menu.actor && typeof menu.actor.setArrowSide === 'function') return menu.actor;
-        if (menu._boxPointer) return menu._boxPointer;
+        try {
+            if (!menu) return null;
+            if (menu.boxPointer) return menu.boxPointer;
+            if (this._isValid(menu.actor) && typeof menu.actor.setArrowSide === 'function') return menu.actor;
+            if (menu._boxPointer) return menu._boxPointer;
+        } catch (e) {}
         return null;
     }
 
     _resetMenuStyle(menu) {
-        const bubble = this._getBoxPointer(menu);
-        const content = menu.box;
-        if (bubble) bubble.set_style(null);
-        if (content) content.set_style(null);
+        try {
+            const bubble = this._getBoxPointer(menu);
+            const content = menu.box;
+            if (this._isValid(bubble)) bubble.set_style(null);
+            if (this._isValid(content)) content.set_style(null);
+        } catch (e) {}
     }
 
     _styleSingleMenu(menu) {
-        const bubble = this._getBoxPointer(menu);
-        const content = menu.box;
-        if (!bubble) return;
+        try {
+            const bubble = this._getBoxPointer(menu);
+            const content = menu.box;
+            if (!this._isValid(bubble)) return;
 
-        const settings = this.getSettings();
-        const radius = settings.get_int('popup-radius');
-        
-        // Shadow
-        const shadowEnabled = settings.get_boolean('popup-shadow-enabled');
-        const shadowColor = settings.get_string('popup-shadow-color');
-        const sX = settings.get_int('popup-shadow-x');
-        const sY = settings.get_int('popup-shadow-y');
-        const sBlur = settings.get_int('popup-shadow-blur');
-        const sSpread = settings.get_int('popup-shadow-spread');
+            const radius = this._settings.get_int('popup-radius');
+            const shadowEnabled = this._settings.get_boolean('popup-shadow-enabled');
+            const shadowColor = this._settings.get_string('popup-shadow-color');
+            const sX = this._settings.get_int('popup-shadow-x');
+            const sY = this._settings.get_int('popup-shadow-y');
+            const sBlur = this._settings.get_int('popup-shadow-blur');
+            const sSpread = this._settings.get_int('popup-shadow-spread');
 
-        // Border
-        const bSize = settings.get_int('popup-border-size');
-        const bColor = settings.get_string('popup-border-color');
-        const bStyle = settings.get_enum('popup-border-style');
-        const styles = ['solid','dotted','dashed','double','groove','ridge','inset','outset','none'];
+            const bSize = this._settings.get_int('popup-border-size');
+            const bColor = this._settings.get_string('popup-border-color');
+            const bStyle = this._settings.get_enum('popup-border-style');
+            const styles = ['solid','dotted','dashed','double','groove','ridge','inset','outset','none'];
 
-        // Bubble Style (Shadow + Border + Radius)
-        // Note: box-shadow on popups works well in St
-        let bubbleCss = `border-radius: ${radius}px; `;
-        
-        if (shadowEnabled) {
-            bubbleCss += `box-shadow: ${sX}px ${sY}px ${sBlur}px ${sSpread}px ${shadowColor}; `;
-        } else {
-            bubbleCss += `box-shadow: none; `;
-        }
-
-        if (bSize > 0 && bStyle !== 8) {
-            bubbleCss += `border: ${bSize}px ${styles[bStyle]} ${bColor}; `;
-        }
-
-        // Ensure boxpointer class allows styling override
-        if (!bubble.has_style_class_name('popup-menu-boxpointer')) {
-            bubble.add_style_class_name('popup-menu-boxpointer');
-        }
-        bubble.set_style(bubbleCss);
-
-        // Content Style (Radius)
-        if (content) {
-            let contentCss = `border-radius: ${radius}px; `;
-            if (!content.has_style_class_name('popup-menu')) {
-                content.add_style_class_name('popup-menu');
+            let bubbleCss = `border-radius: ${radius}px; `;
+            
+            if (shadowEnabled) {
+                bubbleCss += `box-shadow: ${sX}px ${sY}px ${sBlur}px ${sSpread}px ${shadowColor}; `;
+            } else {
+                bubbleCss += `box-shadow: none; `;
             }
-            content.set_style(contentCss);
-        }
+
+            if (bSize > 0 && bStyle !== 8) {
+                bubbleCss += `border: ${bSize}px ${styles[bStyle]} ${bColor}; `;
+            }
+
+            if (!bubble.has_style_class_name('popup-menu-boxpointer')) {
+                bubble.add_style_class_name('popup-menu-boxpointer');
+            }
+            bubble.set_style(bubbleCss);
+
+            if (this._isValid(content)) {
+                let contentCss = `border-radius: ${radius}px; `;
+                if (!content.has_style_class_name('popup-menu')) {
+                    content.add_style_class_name('popup-menu');
+                }
+                content.set_style(contentCss);
+            }
+        } catch (e) {}
     }
 }
