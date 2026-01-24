@@ -296,15 +296,13 @@ export function createWallpaperUI() {
         });
         page.add(colorGroup);
 
-        // FIX: Bind to EXTENSION settings for Light Colors now, not system bgSettings
+        // Bind to EXTENSION settings for Light Colors
         const lightSecRow = _createColorRow(extSettings, 'wallpaper-secondary-color-light', 'Light Secondary');
         const darkSecRow = _createColorRow(extSettings, 'wallpaper-secondary-color-dark', 'Dark Secondary');
         
-        // Pass array of rows to disable
         const shadingRow = _createShadingRow(bgSettings, [lightSecRow, darkSecRow]);
         colorGroup.add(shadingRow);
 
-        // FIX: Bind to EXTENSION settings for Light Primary
         colorGroup.add(_createColorRow(extSettings, 'wallpaper-primary-color-light', 'Light Primary'));
         colorGroup.add(lightSecRow);
         
@@ -449,10 +447,24 @@ function _createImageRow(settings, key, title) {
                 transient_for: btn.get_root(),
                 modal: true
             });
+            
+            // Filters
             const filter = new Gtk.FileFilter();
+            filter.set_name("Images");
             filter.add_mime_type("image/png");
             filter.add_mime_type("image/jpeg");
+            filter.add_mime_type("image/svg+xml");
+            filter.add_mime_type("image/bmp");
+            filter.add_mime_type("image/webp");
             dialog.add_filter(filter);
+            
+            const allFilter = new Gtk.FileFilter();
+            allFilter.set_name("All Files");
+            allFilter.add_pattern("*");
+            dialog.add_filter(allFilter);
+            
+            dialog.set_filter(filter);
+
             _activeWallpaperChooser = dialog;
             dialog.connect('response', (d, response) => {
                 if (response === Gtk.ResponseType.ACCEPT) {
