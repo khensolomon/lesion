@@ -359,6 +359,19 @@ export class PanelsManager extends ExtensionComponent {
     _updateClockCss() {
         const radius = this._settings.get_int('panel-btn-radius');
         const natPad = this._settings.get_int('panel-btn-pad-nat');
+        const hoverEnabled = this._settings.get_boolean('panel-btn-hover-enabled');
+
+        // Since the theme's own pill (which lived on the inner '.clock') is
+        // neutralized below, the clock would have NO hover/active feedback
+        // unless we provide it here. Use the configured colors when the
+        // hover effect is on; otherwise fall back to a shell-like overlay so
+        // the clock still behaves like the other buttons' theme defaults.
+        const hoverBg = hoverEnabled
+            ? this._settings.get_string('panel-btn-bg-hover')
+            : 'rgba(255,255,255,0.12)';
+        const activeBg = hoverEnabled
+            ? this._settings.get_string('panel-btn-bg-active')
+            : 'rgba(255,255,255,0.25)';
 
         const css = `
 #panel .panel-button.clock-display,
@@ -368,6 +381,13 @@ export class PanelsManager extends ExtensionComponent {
 #panel .panel-button.clock-display:checked {
     border-radius: ${radius}px;
     padding: 0 ${natPad}px;
+}
+#panel .panel-button.clock-display:hover {
+    background-color: ${hoverBg};
+}
+#panel .panel-button.clock-display:active,
+#panel .panel-button.clock-display:checked {
+    background-color: ${activeBg};
 }
 #panel .panel-button.clock-display .clock,
 #panel .panel-button.clock-display .clock-display-box,
@@ -438,14 +458,14 @@ export class PanelsManager extends ExtensionComponent {
     }
 
     _cleanupButtonSignals() {
-        for (const [actor, sigs] of this._buttonSignals) {
-            if (this._isValid(actor)) {
-                sigs.forEach(id => {
-                    try {
-                        actor.disconnect(id);
-                    } catch (e) {}
-                });
-            }
+        // Entries are {obj, id} pairs: signals may live on the button itself
+        // or on its menu object.
+        for (const [, sigs] of this._buttonSignals) {
+            sigs.forEach(sig => {
+                try {
+                    if (this._isValid(sig.obj)) sig.obj.disconnect(sig.id);
+                } catch (e) {}
+            });
         }
         this._buttonSignals.clear();
     }
@@ -463,46 +483,53 @@ export class PanelsManager extends ExtensionComponent {
 
             try {
                 if (enabled) {
-                    const idHover = btn.connect('notify::hover', () => {
+                    // Single source of truth for the button's visual state.
+                    // Menu-open ranks above hover: a button whose menu is
+                    // open stays highlighted even when the pointer moves
+                    // into the menu (previously the hover reset wiped it,
+                    // and the indicator — which swallows press events for
+                    // its custom click handling — never highlighted at all).
+                    const applyState = () => {
                         if (!this._isValid(btn)) return;
                         try {
-                            if (btn.hover) {
+                            const menuOpen = btn.menu && btn.menu.isOpen;
+                            if (menuOpen) {
+                                btn.set_style(`${base} background-color: ${activeBg};`);
+                            } else if (btn.hover) {
                                 btn.set_style(`${base} background-color: ${hoverBg};`);
                             } else {
                                 btn.set_style(base || null);
                             }
                         } catch (e) {}
-                    });
-                    sigs.push(idHover);
+                    };
 
-                    const idPress = btn.connect('button-press-event', () => {
+                    sigs.push({ obj: btn, id: btn.connect('notify::hover', applyState) });
+
+                    sigs.push({ obj: btn, id: btn.connect('button-press-event', () => {
                         if (!this._isValid(btn)) return false;
                         try {
                             btn.set_style(`${base} background-color: ${activeBg}; box-shadow: inset 0 0 4px rgba(0,0,0,0.2);`);
                         } catch (e) {}
                         return false; 
-                    });
-                    sigs.push(idPress);
+                    }) });
 
-                    const idRelease = btn.connect('button-release-event', () => {
-                        if (!this._isValid(btn)) return false;
-                        try {
-                            if (btn.hover) {
-                                btn.set_style(`${base} background-color: ${hoverBg};`);
-                            } else {
-                                btn.set_style(base || null);
-                            }
-                        } catch (e) {}
+                    sigs.push({ obj: btn, id: btn.connect('button-release-event', () => {
+                        applyState();
                         return false;
-                    });
-                    sigs.push(idRelease);
+                    }) });
+
+                    // Highlight while the button's menu is open. This is what
+                    // makes the indicator (and any button opened via
+                    // keyboard/code rather than a tracked press) light up.
+                    if (btn.menu && typeof btn.menu.connect === 'function') {
+                        sigs.push({ obj: btn.menu, id: btn.menu.connect('open-state-changed', applyState) });
+                    }
                 }
 
                 // Destroy listener for self-cleanup
-                const idDestroy = btn.connect('destroy', () => {
+                sigs.push({ obj: btn, id: btn.connect('destroy', () => {
                     this._buttonSignals.delete(btn);
-                });
-                sigs.push(idDestroy);
+                }) });
 
                 this._buttonSignals.set(btn, sigs);
             } catch (e) {}

@@ -2,7 +2,7 @@ import Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
 import { log, logError } from '../util/logger.js';
 import { ExtensionComponent } from './base.js';
-import { isMaximized } from '../util/compat.js';
+import { isMaximized, maximize, unmaximize } from '../util/compat.js';
 
 /**
  * Remembers per-app window geometry (keyed by wm_class) and restores it when
@@ -36,9 +36,11 @@ import { isMaximized } from '../util/compat.js';
  */
 
 // Tuning constants
-const WM_CLASS_POLL_MS = 250;     // Poll interval while waiting for wm_class
-const WM_CLASS_MAX_TRIES = 8;     // ~2s total before giving up on restore
-const SETTLE_GRACE_MS = 1000;     // Ignore self-placement for this long after restore
+const WM_CLASS_POLL_MS = 250;     // Poll interval while waiting for the app identity
+const WM_CLASS_MAX_TRIES = 12;    // ~3s: identities can CHANGE after mapping (see below)
+const SETTLE_GRACE_MS = 600;      // Grace after the last verify pass
+const VERIFY_DELAY_MS = 500;      // Delay between restore verification passes
+const VERIFY_MAX_TRIES = 4;       // Reapply attempts against app self-placement
 const SAVE_DEBOUNCE_SEC = 2;      // Disk write debounce
 const PRUNE_MAX_AGE_DAYS = 180;   // Drop entries not seen for this long
 const PRUNE_MAX_ENTRIES = 300;    // Hard cap on stored apps
@@ -110,6 +112,8 @@ export class GeometryManager extends ExtensionComponent {
             // changes are trustworthy immediately. New windows must settle
             // first (design rule 2).
             settled: !isNew,
+            restored: false,
+            wmClassSignalId: 0,
             timerId: 0,
         };
         this._windowData.set(win, data);
@@ -148,47 +152,123 @@ export class GeometryManager extends ExtensionComponent {
      * often set it after 'window-created'), then marks the window settled
      * after a grace period so saving can begin.
      */
+    /**
+     * Waits for the window's FINAL app identity before restoring.
+     *
+     * Crucial detail: get_wm_class() being non-null is NOT enough. Several
+     * apps establish or CHANGE their identity after the window exists —
+     * Firefox maps as 'firefox' and later becomes 'firefox_firefox', Chrome
+     * mutates similarly, and GTK4 single-instance apps (Nautilus, Text
+     * Editor, Settings, Boxes) settle their app-id late. Saves always run
+     * later, under the final identity — so looking up the cache with the
+     * EARLY identity finds nothing and restore silently never happened for
+     * exactly those apps. We therefore keep polling until the identity
+     * matches a saved entry (or attempts run out), and also react to
+     * 'notify::wm-class' in case the change lands between polls.
+     */
     _scheduleRestore(win, data, attempt) {
+        // React immediately if the identity changes mid-wait
+        if (attempt === 0 && !data.wmClassSignalId) {
+            try {
+                data.wmClassSignalId = win.connect('notify::wm-class', () => {
+                    if (data.restored || !this._windowData.has(win)) return;
+                    const id = win.get_wm_class();
+                    if (id && this._geometryCache[id])
+                        this._beginRestore(win, data, id);
+                });
+                data.signals.push(data.wmClassSignalId);
+            } catch (e) {}
+        }
+
         data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
             attempt === 0 ? 50 : WM_CLASS_POLL_MS, () => {
                 data.timerId = 0;
-                if (!this._windowData.has(win)) return GLib.SOURCE_REMOVE;
+                if (!this._windowData.has(win) || data.restored) return GLib.SOURCE_REMOVE;
 
                 let appId = null;
                 try { appId = win.get_wm_class(); } catch (e) {}
 
-                if (!appId && attempt < WM_CLASS_MAX_TRIES) {
+                const geo = appId ? this._geometryCache[appId] : null;
+
+                if (geo) {
+                    this._beginRestore(win, data, appId);
+                } else if (attempt < WM_CLASS_MAX_TRIES) {
+                    // Either no identity yet, or an identity with no saved
+                    // entry — which may still be the EARLY identity of an
+                    // app whose final one we know. Keep waiting.
                     this._scheduleRestore(win, data, attempt + 1);
-                    return GLib.SOURCE_REMOVE;
+                } else {
+                    log(`[Geometry] No saved entry for '${appId ?? 'unknown'}' — tracking only`);
+                    this._settleLater(win, data);
                 }
-
-                if (appId)
-                    this._restoreWindow(win, appId);
-
-                // Grace period before this window's own events count as
-                // user changes worth persisting.
-                data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTLE_GRACE_MS, () => {
-                    data.timerId = 0;
-                    data.settled = true;
-                    return GLib.SOURCE_REMOVE;
-                });
                 return GLib.SOURCE_REMOVE;
             });
     }
 
-    _restoreWindow(win, appId) {
+    _beginRestore(win, data, appId) {
+        if (data.restored) return;
+        data.restored = true;
+        if (data.timerId) {
+            GLib.source_remove(data.timerId);
+            data.timerId = 0;
+        }
         const geo = this._geometryCache[appId];
-        if (!geo) return;
+        this._applyGeometry(win, appId, geo);
+        this._verifyRestore(win, data, appId, 0);
+    }
 
-        // Don't fight the compositor over maximized/fullscreen windows
-        if (isMaximized(win) || win.is_fullscreen()) return;
+    _verifyRestore(win, data, appId, tries) {
+        data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, VERIFY_DELAY_MS, () => {
+            data.timerId = 0;
+            if (!this._windowData.has(win)) return GLib.SOURCE_REMOVE;
 
-        // Basic sanity check to ensure it's not 0x0
-        if (!(geo.w > 50 && geo.h > 50)) return;
+            const geo = this._geometryCache[appId];
+            if (geo && tries < VERIFY_MAX_TRIES && !this._matchesGeometry(win, geo)) {
+                log(`[Geometry] ${appId} moved itself after restore; reapplying (${tries + 1}/${VERIFY_MAX_TRIES})`);
+                this._applyGeometry(win, appId, geo);
+                this._verifyRestore(win, data, appId, tries + 1);
+            } else {
+                // Last resort: some apps insist on their own SIZE, but on
+                // Wayland no app can position itself — a final move_frame
+                // always sticks, so at least the position is honored.
+                if (geo && !geo.max && !this._matchesGeometry(win, geo) &&
+                    !isMaximized(win) && !win.is_fullscreen()) {
+                    try {
+                        const t = this._clampToWorkArea(win, geo);
+                        log(`[Geometry] ${appId} kept its own size; enforcing position only`);
+                        win.move_frame(true, t.x, t.y);
+                    } catch (e) {}
+                }
+                this._settleLater(win, data);
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+    }
 
+    _settleLater(win, data) {
+        data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTLE_GRACE_MS, () => {
+            data.timerId = 0;
+            data.settled = true;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _matchesGeometry(win, geo) {
+        try {
+            if (geo.max) return isMaximized(win);
+            if (isMaximized(win)) return false;
+            const r = win.get_frame_rect();
+            const target = this._clampToWorkArea(win, geo);
+            const near = (a, b) => Math.abs(a - b) <= 2;
+            return near(r.x, target.x) && near(r.y, target.y) &&
+                   near(r.width, target.w) && near(r.height, target.h);
+        } catch (e) {
+            return true; // Don't fight windows we can't measure
+        }
+    }
+
+    _clampToWorkArea(win, geo) {
         let { x, y, w, h } = geo;
-
-        // Clamp to the current work area (design rule 5)
         try {
             const wa = win.get_work_area_current_monitor();
             if (wa && wa.width > 0 && wa.height > 0) {
@@ -198,10 +278,28 @@ export class GeometryManager extends ExtensionComponent {
                 y = Math.max(wa.y, Math.min(y, wa.y + wa.height - h));
             }
         } catch (e) {}
+        return { x, y, w, h };
+    }
 
-        log(`[Geometry] Restoring ${appId} to ${x},${y} [${w}x${h}]`);
+    _applyGeometry(win, appId, geo) {
+        if (win.is_fullscreen()) return;
+
         try {
-            win.move_resize_frame(true, x, y, w, h);
+            // Apply the floating rect first (when we have one) so a later
+            // unmaximize returns to the remembered size, then apply the
+            // maximized state on top if that's how the app was closed.
+            if (geo.w > 50 && geo.h > 50) {
+                if (isMaximized(win) && !geo.max) unmaximize(win);
+                if (!isMaximized(win)) {
+                    const t = this._clampToWorkArea(win, geo);
+                    log(`[Geometry] Restoring ${appId} to ${t.x},${t.y} [${t.w}x${t.h}]`);
+                    win.move_resize_frame(true, t.x, t.y, t.w, t.h);
+                }
+            }
+            if (geo.max && !isMaximized(win)) {
+                log(`[Geometry] Restoring ${appId} maximized`);
+                maximize(win);
+            }
             geo.last_seen = Date.now();
         } catch (e) {
             logError(`[Geometry] Restore failed for ${appId}`, e);
@@ -218,11 +316,23 @@ export class GeometryManager extends ExtensionComponent {
         // our own restore is in flight. Never persist those values.
         if (!data || !data.settled) return;
 
-        // Skip maximized/fullscreen — we don't want "screen size" as the size
-        if (isMaximized(win) || win.is_fullscreen()) return;
+        if (win.is_fullscreen()) return;
 
         const appId = win.get_wm_class();
         if (!appId) return;
+
+        // Maximized: remember the STATE, keep the last floating rect so
+        // unmaximizing after restore returns to the remembered size.
+        // (Previously maximized windows were skipped entirely, so an app
+        // closed maximized reopened as a floating window.)
+        if (isMaximized(win)) {
+            const geo = this._geometryCache[appId] || {};
+            geo.max = true;
+            geo.last_seen = Date.now();
+            this._geometryCache[appId] = geo;
+            this._queueSave();
+            return;
+        }
 
         const rect = win.get_frame_rect();
         if (rect.width < 50 || rect.height < 50) return;
@@ -232,9 +342,15 @@ export class GeometryManager extends ExtensionComponent {
             y: rect.y,
             w: rect.width,
             h: rect.height,
+            max: false,
             last_seen: Date.now()
         };
 
+        log(`[Geometry] Saved ${appId}: ${rect.x},${rect.y} [${rect.width}x${rect.height}]`);
+        this._queueSave();
+    }
+
+    _queueSave() {
         if (this._saveTimeoutId)
             GLib.source_remove(this._saveTimeoutId);
 

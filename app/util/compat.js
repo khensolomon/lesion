@@ -1,4 +1,5 @@
 import Clutter from 'gi://Clutter';
+import Meta from 'gi://Meta';
 
 /**
  * Compatibility helpers.
@@ -32,4 +33,18 @@ export function isMaximized(win) {
         return win.maximized_horizontally && win.maximized_vertically;
     if (typeof win.get_maximized === 'function') return win.get_maximized() !== 0;
     return false;
+}
+
+/**
+ * Meta.MaximizeFlags was removed in GNOME 49; maximize()/unmaximize()
+ * became flagless there.
+ */
+export function maximize(win) {
+    if (Meta.MaximizeFlags !== undefined) win.maximize(Meta.MaximizeFlags.BOTH);
+    else win.maximize();
+}
+
+export function unmaximize(win) {
+    if (Meta.MaximizeFlags !== undefined) win.unmaximize(Meta.MaximizeFlags.BOTH);
+    else win.unmaximize();
 }

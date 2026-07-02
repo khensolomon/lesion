@@ -3,6 +3,50 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.02.6 (version 7)
+
+### Window geometry
+- Fixed restore never firing for apps that establish or change their
+  identity after mapping (Firefox 'firefox' -> 'firefox_firefox', Chrome,
+  and GTK4 single-instance apps such as Nautilus, Text Editor, Settings,
+  and Boxes). Saves run under the final identity, but restore looked up the
+  cache with the first non-null wm_class and silently missed. Restore now
+  waits until the identity matches a saved entry (up to ~3s), reacts to
+  wm-class change notifications, and only then applies.
+- Verification extended to 4 passes; if an app insists on its own size, the
+  final pass enforces at least the saved position (position-only moves
+  always stick on Wayland since clients cannot position themselves).
+- Saves are now logged (debug mode) with identity and geometry for easier
+  diagnosis.
+
+## 26.07.02.5 (version 6)
+
+### Defaults
+- Panel Buttons: Corner Radius now defaults to 6, Natural Padding to 4
+  (Min Padding stays 4). The Default (GNOME) preset matches.
+
+### Panel buttons
+- Buttons now stay highlighted while their menu is open (active background),
+  including the extension indicator, which swallows press events for its
+  custom click handling and previously never highlighted. Menu-open ranks
+  above hover, so moving the pointer into an open menu no longer clears the
+  highlight.
+
+### Clock
+- Restored hover and active feedback on the clock: neutralizing the theme's
+  inner pill had removed its only hover styling. The clock stylesheet now
+  provides hover/active/checked backgrounds using the configured colors
+  (or a shell-like overlay when the hover effect is disabled).
+
+### Window geometry
+- Maximized state is now saved and restored: an app closed maximized reopens
+  maximized, and unmaximizing returns it to the last remembered floating
+  size and position.
+- Restore now verifies itself and reapplies up to two times, beating apps
+  that asynchronously restore their own size after mapping (libadwaita
+  apps, browsers, terminals) and previously overrode the extension's
+  placement.
+
 ## 26.07.02.4 (version 5)
 
 ### Defaults

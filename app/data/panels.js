@@ -60,9 +60,9 @@ export const PanelsPresets = [
             'panel-shadow-inset': false,
 
             'panel-btn-color': 'rgba(255,255,255,1)',
-            'panel-btn-radius': 0,
+            'panel-btn-radius': 6,
             'panel-btn-pad-min': 4,
-            'panel-btn-pad-nat': 8,
+            'panel-btn-pad-nat': 4,
             'panel-btn-hover-enabled': false,
             'panel-btn-bg-hover': 'rgba(255,255,255,0.1)',
             'panel-btn-bg-active': 'rgba(255,255,255,0.2)',

@@ -250,9 +250,9 @@
 
     <!-- Panel: Buttons -->
     <key name="panel-btn-color" type="s"><default>'rgba(255,255,255,1)'</default></key>
-    <key name="panel-btn-radius" type="i"><default>0</default></key>
+    <key name="panel-btn-radius" type="i"><default>6</default></key>
     <key name="panel-btn-pad-min" type="i"><default>4</default></key>
-    <key name="panel-btn-pad-nat" type="i"><default>8</default></key>
+    <key name="panel-btn-pad-nat" type="i"><default>4</default></key>
     <key name="panel-btn-bg-hover" type="s"><default>'rgba(255,255,255,0.1)'</default></key>
     <key name="panel-btn-bg-active" type="s"><default>'rgba(255,255,255,0.2)'</default></key>
     <key name="panel-btn-hover-enabled" type="b"><default>false</default></key>
