@@ -53,6 +53,17 @@ export function createAppsUI() {
     settings.bind('apps-icon-size', sizeRow, 'value', Gio.SettingsBindFlags.DEFAULT);
     globalGroup.add(sizeRow);
 
+    /** Setting: Item Padding (inner padding of custom buttons, independent
+     *  of Style -> Panel Buttons padding) */
+    const padRow = new Adw.SpinRow({
+        title: 'Item Padding',
+        subtitle: 'Horizontal space inside each item, independent of panel button padding',
+        adjustment: new Gtk.Adjustment({ lower: 0, upper: 24, step_increment: 1 }),
+        value: settings.get_int('apps-btn-padding')
+    });
+    settings.bind('apps-btn-padding', padRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+    globalGroup.add(padRow);
+
     /** Setting: Desaturation (Monochrome) */
     const desatRow = new Adw.SwitchRow({
         title: 'Monochrome Icons',

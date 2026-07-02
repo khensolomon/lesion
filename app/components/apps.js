@@ -11,6 +11,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js'; 
 import * as DND from 'resource:///org/gnome/shell/ui/dnd.js';
 import { ExtensionComponent } from './base.js';
+import { setVertical } from '../util/compat.js';
 import { log, logError } from '../util/logger.js'; 
 
 /**
@@ -22,8 +23,11 @@ const AppPanelButton = GObject.registerClass(
         _init(iconOrActor, name, clickCallback, menuCallback) {
             super._init(0.0, name);
             
-            // UPDATED: Removed margin as requested
-            this.style = 'min-width: 0px; padding: 0 4px;'; 
+            // NOTE: no padding here — panels.js overwrites this button's
+            // inline style with the global button style, wiping any padding
+            // set on the button itself. Content padding lives on the inner
+            // box instead (setContentPadding), which nothing else restyles.
+            this.style = 'min-width: 0px;'; 
 
             this._box = new St.Widget({ 
                 layout_manager: new Clutter.BinLayout(),
@@ -31,6 +35,8 @@ const AppPanelButton = GObject.registerClass(
                 y_expand: true 
             });
             this.add_child(this._box);
+
+            this._contentPad = null;
 
             this.iconActor = iconOrActor; 
             
@@ -316,6 +322,16 @@ const AppPanelButton = GObject.registerClass(
             } catch(e) {}
         }
 
+
+        /**
+         * Horizontal padding of the button content. Lives on the inner box
+         * so it survives the global button styling applied by PanelsManager.
+         */
+        setContentPadding(px) {
+            if (this._contentPad === px) return;
+            this._contentPad = px;
+            this._box.style = `padding: 0 ${px}px;`;
+        }
         setVisualState(opacity, showDot) {
             try {
                 if (!this.iconActor) return;
@@ -447,6 +463,7 @@ export class AppsManager extends ExtensionComponent {
         this.observe('changed::apps-icon-size', rebuild);
         this.observe('changed::apps-icon-desaturate', rebuild);
         
+        this.observe('changed::apps-btn-padding', visualUpdate);
         this.observe('changed::apps-opacity-running', visualUpdate);
         this.observe('changed::apps-opacity-stopped', visualUpdate);
         
@@ -660,8 +677,11 @@ export class AppsManager extends ExtensionComponent {
     }
 
     _rebuildAll() {
-        this._syncTrash();
+        // Order matters: groups must be built before the items that are
+        // positioned after them (trash offsets past disks, running past
+        // favorites) so the group counts are accurate.
         this._syncDisks();
+        this._syncTrash();
         this._syncShowGrid();
         this._syncOverview();
         this._syncFavorites();
@@ -758,7 +778,17 @@ export class AppsManager extends ExtensionComponent {
         const ind = this._getIndicatorSettings();
         const opacityRunning = this.getSettings().get_int('apps-opacity-running');
         const opacityStopped = this.getSettings().get_int('apps-opacity-stopped');
-        
+        const contentPad = this.getSettings().get_int('apps-btn-padding');
+
+        // Content padding for all of our custom buttons (no-op if unchanged)
+        const padAll = (btn) => { if (btn && btn.setContentPadding) btn.setContentPadding(contentPad); };
+        padAll(this._items.trash);
+        padAll(this._items.showgrid);
+        padAll(this._items.overview);
+        this._items.disks.forEach(padAll);
+        this._items.favorites.forEach(padAll);
+        this._items.running.forEach(padAll);
+
         const focusWindow = global.display.focus_window;
         let activeCustomBtn = null; 
 
@@ -986,12 +1016,12 @@ export class AppsManager extends ExtensionComponent {
 
         // Create Container (Not ModalDialog, but a generic Box)
         this._identityDialog = new St.BoxLayout({
-            vertical: true,
             reactive: true,
             can_focus: true, // Allow focus for key events
             style_class: 'modal-dialog', // Reuse modal style for visuals
             style: 'min-width: 360px; padding: 12px;' // Removed manual borders/colors to respect theme
         });
+        setVertical(this._identityDialog, true);
 
         // Header (Draggable)
         const header = new St.BoxLayout({ vertical: false, style: 'padding-bottom: 12px;' });
@@ -1022,7 +1052,8 @@ export class AppsManager extends ExtensionComponent {
         this._identityDialog.add_child(header);
 
         // Content
-        const contentBox = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+        const contentBox = new St.BoxLayout({ style: 'spacing: 4px;' });
+        setVertical(contentBox, true);
         
         info.forEach(line => {
             const parts = line.split(': ');
@@ -1314,7 +1345,7 @@ export class AppsManager extends ExtensionComponent {
 
         const size = this.getSettings().get_int('apps-icon-size');
         const pos = this._getPos('trash');
-        const idx = this._getIndex('trash');
+        const idx = this._getIndexAfterGroup('trash', 'disks');
 
         let gicon = null;
         try {
@@ -1630,7 +1661,7 @@ export class AppsManager extends ExtensionComponent {
 
         const running = this._appSystem.get_running();
         const pos = this._getPos('running');
-        const idx = this._getIndex('running');
+        const idx = this._getIndexAfterGroup('running', 'favorites');
         const size = this.getSettings().get_int('apps-icon-size');
 
         const favEnabled = this.getSettings().get_boolean('apps-favorites-enabled');
@@ -1708,5 +1739,22 @@ export class AppsManager extends ExtensionComponent {
     
     _getIndex(keySuffix) {
         return this.getSettings().get_int(`apps-${keySuffix}-index`);
+    }
+
+    /**
+     * Index adjusted for a multi-button group placed before this item on the
+     * same side. Static indexes alone interleave items into the group (e.g.
+     * Trash landing between two disks, Running inside Favorites) because a
+     * group occupies `count` slots, not one.
+     */
+    _getIndexAfterGroup(keySuffix, groupSuffix) {
+        let idx = this._getIndex(keySuffix);
+        if (this.getSettings().get_boolean(`apps-${groupSuffix}-enabled`) &&
+            this._getPos(groupSuffix) === this._getPos(keySuffix) &&
+            this._getIndex(groupSuffix) <= idx) {
+            const group = this._items[groupSuffix];
+            idx += Math.max(0, (group?.length || 0) - 1);
+        }
+        return idx;
     }
 }

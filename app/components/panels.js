@@ -17,6 +17,7 @@ export class PanelsManager extends ExtensionComponent {
         this._monitorsChangedId = 0;
         this._refreshTimeoutId = 0;
         this._settingsSignals = [];
+        this._clockCssFile = null;
 
         // Shared settings object resolved from the extension's own schema dir.
         // Backend and prefs now use the same source, so they can't diverge.
@@ -106,9 +107,12 @@ export class PanelsManager extends ExtensionComponent {
         this._iterateButtons((btn) => {
             if (this._isValid(btn)) {
                 btn.set_style(null);
+                if (btn.has_style_class_name('clock-display'))
+                    this._setClockPillNeutralized(btn, false);
                 delete btn._baseCss;
             }
         });
+        this._unloadClockCss();
     }
 
     // Helper: Safely check if an actor is alive
@@ -144,9 +148,12 @@ export class PanelsManager extends ExtensionComponent {
             this._iterateButtons((btn) => {
                 if (this._isValid(btn)) {
                     btn.set_style(null);
+                    if (btn.has_style_class_name('clock-display'))
+                        this._setClockPillNeutralized(btn, false);
                     btn.queue_relayout();
                 }
             });
+            this._unloadClockCss();
             this._cleanupButtonSignals();
             return;
         }
@@ -154,6 +161,7 @@ export class PanelsManager extends ExtensionComponent {
         this._applyPanelBarStyles();
         this._applyPosition();
         this._applyButtonStaticStyles();
+        this._updateClockCss();
         this._refreshButtonListeners();
         
         this._iterateMenus((menu) => {
@@ -321,11 +329,112 @@ export class PanelsManager extends ExtensionComponent {
 
         this._iterateButtons((btn) => {
             try {
-                btn.set_style(css);
+                let btnCss = css;
+                if (btn.has_style_class_name('clock-display')) {
+                    // The stock theme treats the clock specially: it zeroes
+                    // this button's own padding and draws a fixed-radius pill
+                    // on the inner '.clock' label instead — so Corner Radius
+                    // and padding settings appeared to be ignored here.
+                    // Give the button explicit symmetric padding (the
+                    // -hpadding hints alone can't beat the theme's padding:0)
+                    // and neutralize the inner pill, so the clock is styled
+                    // by the same rules as every other button.
+                    btnCss += ` padding: 0 ${natPad}px;`;
+                    this._setClockPillNeutralized(btn, true);
+                }
+                btn.set_style(btnCss);
                 btn.queue_relayout(); 
-                btn._baseCss = css; 
+                btn._baseCss = btnCss; 
             } catch (e) {}
         });
+    }
+
+    /**
+     * The stock theme styles the clock pill via pseudo-state rules
+     * (:hover/:active/:checked) that inline actor styles cannot reliably
+     * override across GNOME versions and themes (Adwaita, Yaru). A loaded
+     * stylesheet with explicit selectors for every state wins the cascade,
+     * so the clock finally follows the configured Corner Radius and padding.
+     */
+    _updateClockCss() {
+        const radius = this._settings.get_int('panel-btn-radius');
+        const natPad = this._settings.get_int('panel-btn-pad-nat');
+
+        const css = `
+#panel .panel-button.clock-display,
+#panel .panel-button.clock-display:hover,
+#panel .panel-button.clock-display:focus,
+#panel .panel-button.clock-display:active,
+#panel .panel-button.clock-display:checked {
+    border-radius: ${radius}px;
+    padding: 0 ${natPad}px;
+}
+#panel .panel-button.clock-display .clock,
+#panel .panel-button.clock-display .clock-display-box,
+#panel .panel-button.clock-display:hover .clock,
+#panel .panel-button.clock-display:focus .clock,
+#panel .panel-button.clock-display:active .clock,
+#panel .panel-button.clock-display:checked .clock {
+    background-color: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    padding: 0;
+}
+`;
+
+        try {
+            const dir = GLib.build_filenamev([GLib.get_user_cache_dir(), 'lesion']);
+            GLib.mkdir_with_parents(dir, 0o755);
+            const path = GLib.build_filenamev([dir, 'clock.css']);
+            GLib.file_set_contents(path, css);
+
+            const theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
+            if (this._clockCssFile) {
+                try { theme.unload_stylesheet(this._clockCssFile); } catch (e) {}
+            }
+            this._clockCssFile = Gio.File.new_for_path(path);
+            theme.load_stylesheet(this._clockCssFile);
+        } catch (e) {
+            logError('Failed to apply clock stylesheet', e);
+        }
+    }
+
+    _unloadClockCss() {
+        if (!this._clockCssFile) return;
+        try {
+            const theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
+            theme.unload_stylesheet(this._clockCssFile);
+        } catch (e) {}
+        this._clockCssFile = null;
+    }
+
+    /**
+     * Neutralizes (or restores) the stock theme's pill styling on the inner
+     * '.clock' label / 'clock-display-box' inside the dateMenu button, so the
+     * outer button's configured background, radius, and padding are the only
+     * visible styling.
+     */
+    _setClockPillNeutralized(btn, neutralize) {
+        const NEUTRAL = 'background-color: transparent; border-radius: 0; box-shadow: none; margin: 0; padding: 0;';
+        const walk = (actor) => {
+            if (!this._isValid(actor)) return;
+            try {
+                if (actor.has_style_class_name &&
+                    (actor.has_style_class_name('clock') ||
+                     actor.has_style_class_name('clock-display-box'))) {
+                    actor.set_style(neutralize ? NEUTRAL : null);
+                }
+            } catch (e) {}
+            try {
+                let child = actor.get_first_child ? actor.get_first_child() : null;
+                while (child) {
+                    walk(child);
+                    child = child.get_next_sibling();
+                }
+            } catch (e) {}
+        };
+        walk(btn);
     }
 
     _cleanupButtonSignals() {

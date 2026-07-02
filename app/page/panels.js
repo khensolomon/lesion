@@ -307,6 +307,7 @@ export class PanelsPage extends Adw.PreferencesPage {
             'popup-shadow-enabled', 'popup-shadow-color', 'popup-shadow-x', 'popup-shadow-y', 'popup-shadow-blur', 'popup-shadow-spread',
             'panel-blur-enabled', 'panel-blur-sigma', 'panel-margin', 'panel-corner-radius',
             'apps-showgrid-enabled', 'apps-favorites-enabled', 'apps-running-enabled',
+            'apps-disks-enabled', 'apps-trash-enabled',
             'panel-btn-color'
         ];
 
@@ -322,7 +323,14 @@ export class PanelsPage extends Adw.PreferencesPage {
         // START BATCHING
         this._settings.delay();
         
-        const enumKeys = ['panel-border-style', 'popup-border-style', 'panel-position', 'panel-bg-gradient-dir'];
+        // Keys backed by schema enums must go through set_enum.
+        // NOTE: 'panel-bg-gradient-dir' is a plain int key (type="i") and was
+        // wrongly listed here before — set_enum on it throws mid-batch.
+        const enumKeys = [
+            'panel-border-style', 'popup-border-style', 'panel-position',
+            'apps-showgrid-pos', 'apps-favorites-pos', 'apps-running-pos',
+            'apps-disks-pos', 'apps-trash-pos', 'apps-overview-pos'
+        ];
         
         Object.keys(presetData).forEach(key => {
             const val = presetData[key];

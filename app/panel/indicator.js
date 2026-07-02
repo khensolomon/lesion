@@ -109,7 +109,9 @@ export class Indicator {
     this._updateMenu();
 
     const role = AppConfig.uuid || "lesion-indicator";
-    Main.panel.addToStatusArea(role, this.button);
+    // Default slot: right box, after Disks (0) and Trash (1) per the
+    // default layout — Disks, Trash, Indicator, native items, clock, system menu.
+    Main.panel.addToStatusArea(role, this.button, 2, 'right');
   }
 
   _destroyButton() {

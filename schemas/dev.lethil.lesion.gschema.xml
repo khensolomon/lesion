@@ -171,6 +171,7 @@
 
     <!-- Apps -->
     <key name="apps-icon-size" type="i"><default>16</default></key>
+    <key name="apps-btn-padding" type="i"><default>4</default></key>
     <key name="apps-icon-desaturate" type="b"><default>true</default></key>
     <key name="apps-opacity-running" type="i"><default>255</default></key>
     <key name="apps-opacity-stopped" type="i"><default>160</default></key>
@@ -184,27 +185,27 @@
     <key name="apps-indicator-color" type="s"><default>'#ffffff'</default></key>
 
     <!-- Favorites -->
-    <key name="apps-favorites-enabled" type="b"><default>false</default></key>
+    <key name="apps-favorites-enabled" type="b"><default>true</default></key>
     <key name="apps-favorites-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
-    <key name="apps-favorites-index" type="i"><default>0</default></key>
+    <key name="apps-favorites-index" type="i"><default>2</default></key>
 
     <!-- Running Apps -->
-    <key name="apps-running-enabled" type="b"><default>false</default></key>
+    <key name="apps-running-enabled" type="b"><default>true</default></key>
     <key name="apps-running-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
-    <key name="apps-running-index" type="i"><default>0</default></key>
+    <key name="apps-running-index" type="i"><default>3</default></key>
 
     <!-- Disks -->
-    <key name="apps-disks-enabled" type="b"><default>false</default></key>
+    <key name="apps-disks-enabled" type="b"><default>true</default></key>
     <key name="apps-disks-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'right'</default></key>
-    <key name="apps-disks-index" type="i"><default>1</default></key>
+    <key name="apps-disks-index" type="i"><default>0</default></key>
 
     <!-- Trash -->
-    <key name="apps-trash-enabled" type="b"><default>false</default></key>
+    <key name="apps-trash-enabled" type="b"><default>true</default></key>
     <key name="apps-trash-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'right'</default></key>
-    <key name="apps-trash-index" type="i"><default>2</default></key>
+    <key name="apps-trash-index" type="i"><default>1</default></key>
     
     <!-- Show Grid Button -->
-    <key name="apps-showgrid-enabled" type="b"><default>false</default></key>
+    <key name="apps-showgrid-enabled" type="b"><default>true</default></key>
     <key name="apps-showgrid-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
     <key name="apps-showgrid-index" type="i"><default>0</default></key>
     <key name="apps-showgrid-mode" enum="dev.lethil.lesion.ButtonMode"><default>'icon'</default></key>
@@ -215,7 +216,7 @@
     <!-- Overview Button -->
     <key name="apps-overview-enabled" type="b"><default>false</default></key>
     <key name="apps-overview-pos" enum="dev.lethil.lesion.HorizontalPosition"><default>'left'</default></key>
-    <key name="apps-overview-index" type="i"><default>0</default></key>
+    <key name="apps-overview-index" type="i"><default>1</default></key>
     <key name="apps-overview-hide-default" type="b"><default>false</default></key>
 
     <!-- PANEL CUSTOMIZATION -->

@@ -4,6 +4,7 @@ import GLib from 'gi://GLib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import { ExtensionComponent } from './base.js';
+import { setVertical } from '../util/compat.js';
 import { log, logError } from '../util/logger.js';
 
 /**
@@ -34,14 +35,21 @@ export class ClockManager extends ExtensionComponent {
         this._originalClockDisplay = this._dateMenu._clockDisplay;
 
         // --- Custom Clock Container ---
+        // NOTE: this box lives INSIDE the dateMenu button, which is already a
+        // '.panel-button'. It must therefore be a plain, non-reactive
+        // container: giving it its own 'panel-button' class + hover handling
+        // painted a second rounded background inside the outer one, and it
+        // ignored the roundness/background that panels.js applies to
+        // '.panel-button'. The outer dateMenu now owns hover, active state,
+        // click handling, and themed styling — like every other button.
         this._customBox = new St.BoxLayout({
-            style_class: 'panel-button',
-            style: 'min-width: 24px; min-height: 10px; padding:0 10px 0 10px; spacing:0px;',
-            reactive: true,
-            track_hover: true,
-            can_focus: true
+            style_class: 'lesion-clock',
+            style: 'min-width: 24px; min-height: 10px; spacing:0px;',
+            reactive: false,
+            track_hover: false,
+            can_focus: false
         });
-        this._setVertical(this._customBox, true);
+        setVertical(this._customBox, true);
 
         // Time Label
         this._timeLabel = new St.Label({
@@ -70,26 +78,10 @@ export class ClockManager extends ExtensionComponent {
 
         this._originalParent = this._dateMenu.container.get_parent();
 
-        // Setup Hover Effects
-        this._customBox.connect('enter-event', () => this._customBox.add_style_pseudo_class('hover'));
-        this._customBox.connect('leave-event', () => this._customBox.remove_style_pseudo_class('hover'));
-
-        // Handle Click/Release to toggle the menu
-        this._customBox.connect('button-release-event', () => {
-            this._dateMenu.menu.toggle();
-        });
-
-        // Sync 'active' state with the menu visibility
-        // We store the signal ID to disconnect it later, and guard against null access
-        this._menuSignal = this._dateMenu.menu.connect('open-state-changed', (menu, isOpen) => {
-            if (!this._customBox) return;
-            
-            if (isOpen) {
-                this._customBox.add_style_pseudo_class('active');
-            } else {
-                this._customBox.remove_style_pseudo_class('active');
-            }
-        });
+        // Hover, click (menu toggle), and :active state are all handled by
+        // the enclosing dateMenu PanelMenu.Button natively now that the
+        // custom box is non-reactive — no manual pseudo-class juggling.
+        this._menuSignal = null;
 
         // Watch for text changes in the original clock to update our custom label
         this._clockSignal = this._originalClockDisplay.connect('notify::text', () => {
@@ -125,21 +117,6 @@ export class ClockManager extends ExtensionComponent {
      */
     onDisable() {
         this._restore();
-    }
-
-    /**
-     * Compat: St.BoxLayout 'vertical' is deprecated since GNOME 48 in favor
-     * of 'orientation'. Use whichever the running shell supports.
-     * @private
-     */
-    _setVertical(box, vertical) {
-        if ('orientation' in box) {
-            box.orientation = vertical
-                ? Clutter.Orientation.VERTICAL
-                : Clutter.Orientation.HORIZONTAL;
-        } else {
-            box.vertical = vertical;
-        }
     }
 
     /**
@@ -250,7 +227,7 @@ export class ClockManager extends ExtensionComponent {
         this._customBox.visible = true;
 
         if (multiline) {
-            this._setVertical(this._customBox, true);
+            setVertical(this._customBox, true);
             this._dateLabel.opacity = 255;
 
             // Regex to find time pattern like HH:MM or H:MM, optionally with seconds or AM/PM
@@ -271,7 +248,7 @@ export class ClockManager extends ExtensionComponent {
             }
 
         } else {
-            this._setVertical(this._customBox, false);
+            setVertical(this._customBox, false);
             this._dateLabel.opacity = 0;
             this._dateLabel.text = ' ';
 
