@@ -54,7 +54,7 @@ There are three ways to install Lesion:
    3. Link the extension directory to your local extensions folder:
 
       ```bash
-      ln -s "$(pwd)" \~/.local/share/gnome-shell/extensions/lesion@lethil
+      ln -s "$(pwd)" \~/.local/share/gnome-shell/extensions/lesion@lethil.me
       ```
 
    4. Restart GNOME Shell (`Alt` + `F2`, type `r`, press `Enter`).

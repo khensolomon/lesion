@@ -1,5 +1,5 @@
 #!/bin/bash
-EXT=responsive-prefs@example.com
+EXT=lesion@lethil.me
 
 echo "--Reloading extension ${EXT} ..."
 gnome-extensions disable ${EXT}
