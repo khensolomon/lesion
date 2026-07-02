@@ -1,6 +1,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
+import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { log, logError } from '../util/logger.js';
 import { ExtensionComponent } from './base.js';
@@ -14,6 +15,13 @@ export class WallpaperManager extends ExtensionComponent {
         
         this._backupWallpaper();
 
+        // FIX: background actors are recreated on monitor changes and
+        // wallpaper switches, silently dropping our effects. Reapply then.
+        this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => {
+            if (this.getSettings().get_boolean('wallpaper-enabled'))
+                this._updateEffects();
+        });
+
         // Check if we need to initialize Light colors from system
         this._initLightColors();
 
@@ -22,10 +30,31 @@ export class WallpaperManager extends ExtensionComponent {
     }
 
     onDisable() {
+        if (this._monitorsChangedId) {
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = 0;
+        }
         this._cleanupFeatures();
         this._restoreWallpaper();
         this._bgSettings = null;
         this._interfaceSettings = null;
+    }
+
+    /**
+     * Backup lives in the user state dir, NOT the extension dir:
+     * - the extension dir may be read-only (system installs) and is wiped on
+     *   every extension update, silently destroying the backup;
+     * - EGO review also rejects writing into the extension directory.
+     * The old in-extension path is still read once for migration.
+     */
+    _getBackupPath() {
+        const dir = GLib.build_filenamev([GLib.get_user_state_dir(), 'lesion']);
+        GLib.mkdir_with_parents(dir, 0o755);
+        return GLib.build_filenamev([dir, this.backupFile]);
+    }
+
+    _getLegacyBackupPath() {
+        return GLib.build_filenamev([this._extension.path, this.backupFile]);
     }
 
     _initLightColors() {
@@ -152,15 +181,20 @@ export class WallpaperManager extends ExtensionComponent {
             }
 
             // Blur
+            // FIX: use Shell.BlurEffect (same as PanelsManager). The legacy
+            // Clutter.BlurEffect has no sigma control and is not reliable on
+            // GNOME 46+; Shell.BlurEffect uses 'radius' (= sigma * 2).
             const blurName = 'lesion-blur';
             if (blurSigma > 0) {
                 let effect = actor.get_effect(blurName);
                 if (!effect) {
-                    effect = new Clutter.BlurEffect();
+                    effect = new Shell.BlurEffect({
+                        brightness: 1.0,
+                        mode: Shell.BlurMode.ACTOR
+                    });
                     actor.add_effect_with_name(blurName, effect);
                 }
-                if (effect.set_sigma) effect.set_sigma(blurSigma);
-                else effect.sigma = blurSigma;
+                effect.radius = blurSigma * 2;
             } else {
                 actor.remove_effect_by_name(blurName);
             }
@@ -193,7 +227,16 @@ export class WallpaperManager extends ExtensionComponent {
 
     _backupWallpaper() {
         try {
-            const backupPath = GLib.build_filenamev([this._extension.path, this.backupFile]);
+            const backupPath = this._getBackupPath();
+            // Migration: honor a backup left behind by older versions
+            if (!GLib.file_test(backupPath, GLib.FileTest.EXISTS) &&
+                GLib.file_test(this._getLegacyBackupPath(), GLib.FileTest.EXISTS)) {
+                try {
+                    const legacy = Gio.File.new_for_path(this._getLegacyBackupPath());
+                    legacy.copy(Gio.File.new_for_path(backupPath), Gio.FileCopyFlags.NONE, null, null);
+                    legacy.delete(null);
+                } catch (e) {}
+            }
             if (!GLib.file_test(backupPath, GLib.FileTest.EXISTS)) {
                 const backupData = {
                     'picture-uri': this._bgSettings.get_string('picture-uri'),
@@ -212,7 +255,7 @@ export class WallpaperManager extends ExtensionComponent {
 
     _restoreWallpaper() {
         try {
-            const backupPath = GLib.build_filenamev([this._extension.path, this.backupFile]);
+            const backupPath = this._getBackupPath();
             const file = Gio.File.new_for_path(backupPath);
             if (file.query_exists(null)) {
                 const [success, contents] = file.load_contents(null);

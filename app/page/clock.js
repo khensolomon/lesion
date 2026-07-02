@@ -93,7 +93,7 @@ export function createClockUI() {
   };
 
   const page = new Adw.PreferencesPage();
-  const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+  const settings = AppConfig.getSettings();
 
   // --- GROUP 1: POSITIONING ---
   const posGroup = new Adw.PreferencesGroup({

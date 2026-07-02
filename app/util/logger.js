@@ -1,7 +1,9 @@
 import { AppConfig } from '../config.js';
 
-// A reference to the original, global log function provided by GJS
-const _originalLog = globalThis.log;
+// A reference to the global log function provided by GJS.
+// In GNOME 45+ log() is just an alias for console.log(); fall back explicitly
+// so this also works in contexts where the alias is absent.
+const _originalLog = globalThis.log ?? console.log;
 
 /**
  * The custom log function.
@@ -23,10 +25,18 @@ export function log(message, ...args) {
 /**
  * A log function that *always* prints, regardless of debug status.
  * Use this for important warnings or errors.
- * @param {string} message - The message to log.
+ * Tolerates being called as logError(error) or logError(message, error) —
+ * both patterns exist in the codebase.
+ * @param {string|Error} message - The message (or an Error) to log.
  * @param  {...any} args - Additional arguments to pass to the logger.
  */
 export function logError(message, ...args) {
+    if (message instanceof Error) {
+        const err = message;
+        const extra = args.length > 0 ? `${args.join(' ')}: ` : '';
+        _originalLog(`ERROR: ${AppConfig.prefix} ${extra}${err.message}\n${err.stack ?? ''}`);
+        return;
+    }
     const msg = `ERROR: ${AppConfig.prefix} ${message}`;
     if (args.length > 0) {
         _originalLog(msg, ...args);

@@ -109,7 +109,7 @@ export default class GnomeSplitViewPrefs extends ExtensionPreferences {
 
     _setupDeepLinking(splitView) {
         try {
-            this._settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+            this._settings = AppConfig.getSettings();
 
             const checkOpenPage = () => {
                 const pageId = this._settings.get_string("open-page");

@@ -8,7 +8,7 @@ let _activeIconChooser = null;
 
 export function createAppButtonUI() {
     const page = new Adw.PreferencesPage();
-    const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+    const settings = AppConfig.getSettings();
 
     // --- SECTION 1: GENERAL ---
     const mainGroup = new Adw.PreferencesGroup({ 

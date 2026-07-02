@@ -27,7 +27,7 @@ export function createWallpaperUI() {
         }
 
         try {
-            extSettings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+            extSettings = AppConfig.getSettings();
         } catch (e) {
             _addError(page, "Extension Schema Error", e);
         }

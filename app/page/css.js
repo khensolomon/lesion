@@ -21,7 +21,7 @@ export function createCssUI(navigator) {
         return page;
     }
 
-    const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+    const settings = AppConfig.getSettings();
 
     // 1. Add Bundled Styles Group
     _addBundledStylesGroup(page, settings);

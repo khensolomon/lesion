@@ -11,7 +11,7 @@ export const SettingsManager = {
      */
     exportSettings() {
         try {
-            const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+            const settings = AppConfig.getSettings();
             const keys = settings.list_keys();
             const exportData = {
                 metadata: {
@@ -52,7 +52,7 @@ export const SettingsManager = {
             // Version check (Optional: add logic here to handle migrations)
             // if (data.metadata.version < 1) { ... migrate ... }
 
-            const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+            const settings = AppConfig.getSettings();
             const schemaKeys = settings.list_keys();
             let importCount = 0;
 

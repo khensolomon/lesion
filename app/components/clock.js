@@ -35,13 +35,13 @@ export class ClockManager extends ExtensionComponent {
 
         // --- Custom Clock Container ---
         this._customBox = new St.BoxLayout({
-            vertical: true,
             style_class: 'panel-button',
             style: 'min-width: 24px; min-height: 10px; padding:0 10px 0 10px; spacing:0px;',
             reactive: true,
             track_hover: true,
             can_focus: true
         });
+        this._setVertical(this._customBox, true);
 
         // Time Label
         this._timeLabel = new St.Label({
@@ -125,6 +125,21 @@ export class ClockManager extends ExtensionComponent {
      */
     onDisable() {
         this._restore();
+    }
+
+    /**
+     * Compat: St.BoxLayout 'vertical' is deprecated since GNOME 48 in favor
+     * of 'orientation'. Use whichever the running shell supports.
+     * @private
+     */
+    _setVertical(box, vertical) {
+        if ('orientation' in box) {
+            box.orientation = vertical
+                ? Clutter.Orientation.VERTICAL
+                : Clutter.Orientation.HORIZONTAL;
+        } else {
+            box.vertical = vertical;
+        }
     }
 
     /**
@@ -235,7 +250,7 @@ export class ClockManager extends ExtensionComponent {
         this._customBox.visible = true;
 
         if (multiline) {
-            this._customBox.set_vertical(true);
+            this._setVertical(this._customBox, true);
             this._dateLabel.opacity = 255;
 
             // Regex to find time pattern like HH:MM or H:MM, optionally with seconds or AM/PM
@@ -256,7 +271,7 @@ export class ClockManager extends ExtensionComponent {
             }
 
         } else {
-            this._customBox.set_vertical(false);
+            this._setVertical(this._customBox, false);
             this._dateLabel.opacity = 0;
             this._dateLabel.text = ' ';
 

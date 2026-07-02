@@ -16,7 +16,7 @@ import { AppConfig } from '../config.js';
  */
 export function createAppsUI() {
     const page = new Adw.PreferencesPage();
-    const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+    const settings = AppConfig.getSettings();
 
     /**
      * Helper to attach an icon to the group header.

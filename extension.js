@@ -1,4 +1,3 @@
-import GLib from "gi://GLib";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import { log, logError } from "./app/util/logger.js";
 import { AppConfig } from "./app/config.js";
@@ -52,21 +51,6 @@ export default class LesionExtension extends Extension {
     });
   }
 
-  // 2. Find ANY conflicting "Extensions" app window
-  _findConflictingWindow() {
-    const display = global.display;
-    return display.list_all_windows().find((w) => {
-      if (!w || typeof w.get_wm_class !== 'function') return false;
-      const wmClass = w.get_wm_class();
-      // Check for official GNOME Extensions app or Extension Manager
-      return wmClass && (
-        wmClass.includes("org.gnome.Extensions") || 
-        wmClass.includes("com.mattjakeman.ExtensionManager") ||
-        wmClass.includes("gnome-extensions-app")
-      );
-    });
-  }
-
   get isPreferencesOpen() {
     return !!this._getPreferencesWindow();
   }
@@ -93,41 +77,24 @@ export default class LesionExtension extends Extension {
     if (existingWindow) {
       existingWindow.activate(global.get_current_time());
       return;
-    } 
-
-    // B. If a conflicting "Extensions" window is open, CLOSE IT first.
-    // This prevents the "Single Instance" blocking bug.
-    const conflict = this._findConflictingWindow();
-    if (conflict) {
-        conflict.delete(global.get_current_time());
     }
 
-    // C. Open new preferences with error handling
-    const fallbackOpen = () => {
-        try {
-          // Use command line as last resort - usually works even if DBus fails
-          GLib.spawn_command_line_async(`gnome-extensions prefs ${this.uuid}`);
-        } catch (err) {
-          logError("Failed to spawn preferences manually", err);
-        }
-    };
-
+    // B. Open preferences, handling the async rejection (GNOME 45+ returns a
+    // Promise; an unhandled rejection would spam the journal).
+    // NOTE: deliberately no subprocess fallback and no closing of other apps'
+    // windows here — killing the Extensions app window or spawning
+    // `gnome-extensions prefs` is hostile to the user and rejected by EGO
+    // review. If the prefs dialog is blocked by another open dialog, the most
+    // we should do is tell the user.
     try {
-        // We capture the result of super.openPreferences()
-        const result = super.openPreferences();
-        
-        // If it returns a Promise (GNOME 45+), we MUST handle rejection
-        if (result && typeof result.then === 'function') {
-            result.catch(err => {
-                // This catch block suppresses the "Unhandled promise rejection" warning
-                // log("Async openPreferences failed, attempting fallback..."); 
-                fallbackOpen();
-            });
-        }
+      const result = super.openPreferences();
+      if (result && typeof result.then === "function") {
+        result.catch((err) => {
+          logError("Failed to open preferences (another extension dialog may be open)", err);
+        });
+      }
     } catch (e) {
-        // If it throws synchronously (older GNOME), we catch it here
-        // log("Sync openPreferences failed, attempting fallback...");
-        fallbackOpen();
+      logError("Failed to open preferences", e);
     }
   }
 }

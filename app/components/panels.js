@@ -16,11 +16,11 @@ export class PanelsManager extends ExtensionComponent {
         this._blurEffect = null;
         this._monitorsChangedId = 0;
         this._refreshTimeoutId = 0;
+        this._settingsSignals = [];
 
-        // FORCE CONSISTENCY:
-        // Create a dedicated settings object using the exact ID from AppConfig.
-        // This ensures backend matches frontend, ignoring metadata.json defaults if they differ.
-        this._settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+        // Shared settings object resolved from the extension's own schema dir.
+        // Backend and prefs now use the same source, so they can't diverge.
+        this._settings = AppConfig.getSettings();
     }
 
     onEnable() {
@@ -45,8 +45,9 @@ export class PanelsManager extends ExtensionComponent {
         ];
 
         keys.forEach(key => {
-            // Note: We bind to this._settings, not this.getSettings()
-            this._settings.connect(`changed::${key}`, () => this._queueRefresh());
+            this._settingsSignals.push(
+                this._settings.connect(`changed::${key}`, () => this._queueRefresh())
+            );
         });
 
         this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => {
@@ -66,13 +67,14 @@ export class PanelsManager extends ExtensionComponent {
             this._refreshTimeoutId = 0;
         }
 
-        // Cleanup settings signals
+        // Cleanup settings signals.
+        // NOTE: never run_dispose() a Gio.Settings — it is shared and disposing
+        // it invalidates every other consumer. Disconnect our own signals only.
         if (this._settings) {
-            this._settings.run_dispose(); 
-            // Note: In newer GJS we usually just let it GC, but disconnecting signals is good practice if we stored IDs.
-            // Since we used connect-object or simple closures, GC handles most, but here we just stop listening.
-            // Actually, for Gio.Settings, we usually don't need explicit disconnect if the object is dropped,
-            // but since we keep the object, we just ignore signals in _queueRefresh via _isEnabled check.
+            this._settingsSignals.forEach(id => {
+                try { this._settings.disconnect(id); } catch (e) {}
+            });
+            this._settingsSignals = [];
         }
 
         if (this._boxSignals) {

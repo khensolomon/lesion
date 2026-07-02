@@ -6,7 +6,7 @@ import { AppConfig } from '../config.js';
 
 export function createGeometryUI() {
     const page = new Adw.PreferencesPage();
-    const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+    const settings = AppConfig.getSettings();
 
     // Internal tracker for active widgets
     // Map<WindowID, Adw.ActionRow>

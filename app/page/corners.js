@@ -9,7 +9,7 @@ import { AppConfig } from '../config.js';
  */
 export function createCornersUI() {
     const page = new Adw.PreferencesPage();
-    const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+    const settings = AppConfig.getSettings();
 
     // --- GROUP 1: ACTIVATION ---
     const mainGroup = new Adw.PreferencesGroup({

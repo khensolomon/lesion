@@ -31,14 +31,37 @@ export class GeometryManager extends ExtensionComponent {
         this.observe('changed::geometry-enabled', () => {
             if (!this.getSettings().get_boolean('geometry-enabled')) {
                 this._cleanupWindows();
+            } else {
+                // FIX: re-hook existing windows when the feature is turned
+                // back on; previously nothing happened until windows were
+                // recreated.
+                global.display.list_all_windows().forEach(win => {
+                    this._onWindowCreated(win);
+                });
             }
         });
+    }
+
+    /**
+     * Compat: Meta.Window.get_maximized() was removed in GNOME 49.
+     * Use is_maximized() when available, fall back to the property pair,
+     * then to the legacy method.
+     */
+    _isMaximized(win) {
+        if (typeof win.is_maximized === 'function') return win.is_maximized();
+        if ('maximized_horizontally' in win)
+            return win.maximized_horizontally && win.maximized_vertically;
+        if (typeof win.get_maximized === 'function') return win.get_maximized() !== 0;
+        return false;
     }
 
     onDisable() {
         if (this._saveTimeoutId) {
             GLib.source_remove(this._saveTimeoutId);
             this._saveTimeoutId = null;
+            // FIX: flush the pending debounce write, otherwise the last ~2s
+            // of window moves are silently lost on disable/lock.
+            this._saveToDisk();
         }
         this._cleanupWindows();
     }
@@ -56,23 +79,40 @@ export class GeometryManager extends ExtensionComponent {
     _onWindowCreated(win) {
         if (!this.getSettings().get_boolean('geometry-enabled')) return;
         if (!win || win.get_window_type() === Meta.WindowType.DESKTOP) return;
+        if (this._trackingWindows.has(win)) return; // FIX: never double-hook
 
-        // Try to Restore
-        this._restoreWindow(win);
+        // Try to Restore.
+        // FIX: defer to idle — on 'window-created' the frame is often not
+        // sized yet, so an immediate move_resize_frame gets overridden by the
+        // app's own initial placement.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            if (this._trackingWindows.has(win)) this._restoreWindow(win);
+            return GLib.SOURCE_REMOVE;
+        });
 
         // Hook for changes
-        // We use 'connect' on the MetaWindow object
         const signals = [];
-        
-        // Size change
         signals.push(win.connect('size-changed', () => this._onWindowChanged(win)));
-        // Position change
         signals.push(win.connect('position-changed', () => this._onWindowChanged(win)));
 
-        // Store signal IDs to disconnect later (cleanup is important!)
-        // We attach a custom property to the window object to track its own signals
+        // FIX: untrack when the window goes away, otherwise the Set leaks
+        // dead MetaWindows and cleanup later throws on disposed objects.
+        signals.push(win.connect('unmanaged', () => {
+            this._untrackWindow(win);
+        }));
+
         win._lesionGeometrySignals = signals;
         this._trackingWindows.add(win);
+    }
+
+    _untrackWindow(win) {
+        if (win._lesionGeometrySignals) {
+            win._lesionGeometrySignals.forEach(id => {
+                try { win.disconnect(id); } catch (e) {}
+            });
+            win._lesionGeometrySignals = null;
+        }
+        this._trackingWindows.delete(win);
     }
 
     _restoreWindow(win) {
@@ -94,7 +134,7 @@ export class GeometryManager extends ExtensionComponent {
         if (!this.getSettings().get_boolean('geometry-enabled')) return;
         
         // Skip maximized/fullscreen windows - we don't want to save "screen size" as the window size
-        if (win.get_maximized() || win.is_fullscreen()) return;
+        if (this._isMaximized(win) || win.is_fullscreen()) return;
 
         const appId = win.get_wm_class();
         if (!appId) return;
@@ -133,12 +173,9 @@ export class GeometryManager extends ExtensionComponent {
     }
 
     _cleanupWindows() {
-        // Disconnect all window signals we added
-        for (const win of this._trackingWindows) {
-            if (win._lesionGeometrySignals) {
-                win._lesionGeometrySignals.forEach(id => win.disconnect(id));
-                win._lesionGeometrySignals = null;
-            }
+        // Disconnect all window signals we added (safe against disposed windows)
+        for (const win of [...this._trackingWindows]) {
+            this._untrackWindow(win);
         }
         this._trackingWindows.clear();
     }

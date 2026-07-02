@@ -16,7 +16,7 @@ export class PanelsPage extends Adw.PreferencesPage {
     constructor() {
         super();
         
-        this._settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+        this._settings = AppConfig.getSettings();
         
         this._initUI();
     }

@@ -6,7 +6,7 @@ import { AppConfig } from '../config.js';
 
 export function createDockUI() {
     const page = new Adw.PreferencesPage();
-    const settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+    const settings = AppConfig.getSettings();
 
     // --- 1. MAIN TOGGLE ---
     const mainGroup = new Adw.PreferencesGroup({ title: 'Functionality' });

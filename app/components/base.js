@@ -70,7 +70,15 @@ export class ExtensionComponent {
      * Internal cleanup (signals, etc)
      */
     _cleanup() {
-        this._signals.forEach(sig => sig.obj.disconnect(sig.id));
+        // FIX: one disposed object mid-loop used to abort the whole cleanup,
+        // leaving every remaining signal connected (leaks + ghost callbacks).
+        this._signals.forEach(sig => {
+            try {
+                sig.obj.disconnect(sig.id);
+            } catch (e) {
+                logError('Failed to disconnect signal during cleanup', e);
+            }
+        });
         this._signals = [];
         this._settings = null;
     }

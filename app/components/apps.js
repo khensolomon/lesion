@@ -576,6 +576,13 @@ export class AppsManager extends ExtensionComponent {
     }
 
     onDisable() {
+        // FIX: a pending debounce could fire after disable and touch
+        // destroyed buttons, throwing in the shell's main loop.
+        if (this._updateTimeout) {
+            GLib.source_remove(this._updateTimeout);
+            this._updateTimeout = null;
+        }
+
         this._clearAll();
         // Restore Default Activities if hidden
         if (Main.panel.statusArea.activities) {
@@ -1237,7 +1244,7 @@ export class AppsManager extends ExtensionComponent {
                 Main.notify('Safely Removed', `${name} can now be unplugged.`);
             } catch (e) {
                 Main.notify('Safely Remove Failed', e.message);
-                logError(e, 'Safely Remove Failed');
+                logError('Safely Remove Failed', e);
             }
         };
         if (mount.can_eject()) mount.eject_with_operation(Gio.MountUnmountFlags.NONE, null, null, callback);

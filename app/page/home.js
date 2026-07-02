@@ -20,7 +20,7 @@ export class HomePage extends Adw.PreferencesPage {
         this.goToPage = goToPage;
         
         // State management
-        this._settings = new Gio.Settings({ schema_id: AppConfig.schemaId });
+        this._settings = AppConfig.getSettings();
         this._activeDialog = null; // Track active file chooser to prevent duplicates
 
         this._buildUI();

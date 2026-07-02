@@ -66,7 +66,8 @@ export class Indicator {
   _createButton() {
     const nameId = AppConfig.name || "Lesion Extension";
     this.button = new PanelMenu.Button(0.5, nameId, false);
-    this.button.tooltip_text = nameId;
+    // Note: St widgets have no 'tooltip_text' (that's GTK); setting it here
+    // was a silent no-op, so it has been removed.
 
     // Create Icon Bin
     this._iconBin = new St.Bin();
@@ -201,7 +202,20 @@ export class Indicator {
 
     const quitItem = new PopupMenu.PopupMenuItem("Disable Extension");
     quitItem.connect("activate", () => {
-      this.extension.disable();
+      // FIX: calling this.extension.disable() directly desyncs GNOME Shell's
+      // extension manager (the shell still believes the extension is enabled,
+      // and re-enabling misbehaves). Go through the extension manager instead,
+      // and defer it to idle: disabling destroys this very menu while its
+      // 'activate' signal is still being emitted, which can crash the shell.
+      const uuid = this.extension.uuid;
+      GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+        try {
+          Main.extensionManager.disableExtension(uuid);
+        } catch (e) {
+          logError("Failed to disable extension", e);
+        }
+        return GLib.SOURCE_REMOVE;
+      });
     });
     menu.addMenuItem(quitItem);
 

@@ -1,3 +1,6 @@
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+
 /**
  * A singleton configuration object.
  * Acts as the Single Source of Truth for App ID, Dimensions, Metadata, and Context.
@@ -32,10 +35,13 @@ export const AppConfig = {
         "developer-name": ""
     },
     
+    _settings: null,
+
     init(metadata, path, isExtension = false) {
         this.metadata = { ...this.metadata, ...metadata };
         this.path = path;
         this.isExtension = isExtension;
+        this._settings = null; // Path/context may have changed; rebuild lazily
         
         this.debug = this.metadata.debug ?? false;
         
@@ -62,5 +68,33 @@ export const AppConfig = {
     
     get developer() {
         return this.metadata["developer-name"] || "Lethil";
+    },
+
+    /**
+     * Returns a Gio.Settings for the extension schema.
+     *
+     * Unlike `new Gio.Settings({ schema_id })`, this resolves the schema from
+     * the extension's own `schemas/` directory (falling back to the system
+     * source). A missing schema throws a catchable Error instead of aborting
+     * the whole process, and the extension no longer needs its schema
+     * installed globally in ~/.local/share/glib-2.0/schemas to work.
+     */
+    getSettings() {
+        if (this._settings) return this._settings;
+
+        let source = Gio.SettingsSchemaSource.get_default();
+        if (this.path) {
+            const dir = GLib.build_filenamev([this.path, 'schemas']);
+            if (GLib.file_test(GLib.build_filenamev([dir, 'gschemas.compiled']), GLib.FileTest.EXISTS)) {
+                source = Gio.SettingsSchemaSource.new_from_directory(dir, Gio.SettingsSchemaSource.get_default(), false);
+            }
+        }
+
+        const schema = source.lookup(this.schemaId, true);
+        if (!schema)
+            throw new Error(`Schema '${this.schemaId}' could not be found for extension ${this.uuid}`);
+
+        this._settings = new Gio.Settings({ settings_schema: schema });
+        return this._settings;
     }
 };
