@@ -149,6 +149,8 @@
     </key>
 
     <!-- Geometry -->
+    <key name="corners-enabled" type="b"><default>false</default></key>
+    <key name="corners-radius" type="i"><default>12</default></key>
     <key name="geometry-enabled" type="b">
       <default>false</default>
       <summary>Save and restore window geometry</summary>

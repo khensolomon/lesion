@@ -8,7 +8,7 @@ import { createAppsUI } from './apps.js';
 import { createPanelsUI } from "./panels.js";
 // import { createSettingUI } from "./setting.js";
 // import { createAppButtonUI } from './appbutton.js';
-// import { createCornersUI } from './corners.js';
+import { createCornersUI } from './corners.js';
 // import { createDockUI } from './dock.js';
 // import { createMimicUI } from './mimic.js';
 // import Adw from "gi://Adw";
@@ -81,14 +81,14 @@ export function getPages() {
           keywords: ["css", "style", "theme", "color", "custom"],
           ui: createCssUI,
         },        
-        // {
-        //   id: "window-corners",
-        //   title: "Corner",
-        //   icon: "preferences-desktop-theme-symbolic",
-        //   description: "Window corner actions and hotspots",
-        //   keywords: ["corners", "hotspots", "actions", "edges", "round"],
-        //   ui: createCornersUI,
-        // },
+        {
+          id: "window-corners",
+          title: "Corners",
+          icon: "preferences-desktop-theme-symbolic",
+          description: "Uniform rounded corners for application windows",
+          keywords: ["corners", "round", "radius", "windows", "square"],
+          ui: createCornersUI,
+        },
         {
           id: "window-geometry",
           title: "Geometry",

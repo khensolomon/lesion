@@ -1,5 +1,6 @@
 import Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
+import Clutter from 'gi://Clutter';
 import { log, logError } from '../util/logger.js';
 import { ExtensionComponent } from './base.js';
 import { isMaximized, maximize, unmaximize } from '../util/compat.js';
@@ -44,6 +45,10 @@ const VERIFY_MAX_TRIES = 4;       // Reapply attempts against app self-placement
 const SAVE_DEBOUNCE_SEC = 2;      // Disk write debounce
 const PRUNE_MAX_AGE_DAYS = 180;   // Drop entries not seen for this long
 const PRUNE_MAX_ENTRIES = 300;    // Hard cap on stored apps
+const MAX_TITLES_PER_APP = 10;    // Per-title sub-slots kept per app
+const GLIDE_AFTER_MS = 250;       // Window visible longer than this -> glide, don't snap
+const GLIDE_DURATION_MS = 220;    // Glide animation length
+const GLIDE_MIN_DELTA = 8;        // Don't animate sub-8px corrections
 
 export class GeometryManager extends ExtensionComponent {
 
@@ -115,6 +120,7 @@ export class GeometryManager extends ExtensionComponent {
             restored: false,
             wmClassSignalId: 0,
             timerId: 0,
+            createdAt: GLib.get_monotonic_time(),
         };
         this._windowData.set(win, data);
 
@@ -129,6 +135,16 @@ export class GeometryManager extends ExtensionComponent {
     _untrackWindow(win) {
         const data = this._windowData.get(win);
         if (!data) return;
+
+        try {
+            const actor = win.get_compositor_private();
+            if (actor) {
+                actor.remove_transition('translation-x');
+                actor.remove_transition('translation-y');
+                actor.translation_x = 0;
+                actor.translation_y = 0;
+            }
+        } catch (e) {}
 
         if (data.timerId) {
             GLib.source_remove(data.timerId);
@@ -181,7 +197,7 @@ export class GeometryManager extends ExtensionComponent {
         }
 
         data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
-            attempt === 0 ? 50 : WM_CLASS_POLL_MS, () => {
+            attempt === 0 ? 0 : WM_CLASS_POLL_MS, () => {
                 data.timerId = 0;
                 if (!this._windowData.has(win) || data.restored) return GLib.SOURCE_REMOVE;
 
@@ -212,8 +228,8 @@ export class GeometryManager extends ExtensionComponent {
             GLib.source_remove(data.timerId);
             data.timerId = 0;
         }
-        const geo = this._geometryCache[appId];
-        this._applyGeometry(win, appId, geo);
+        const geo = this._lookupGeometry(win, appId);
+        this._applyGeometry(win, appId, geo, data);
         this._verifyRestore(win, data, appId, 0);
     }
 
@@ -222,10 +238,10 @@ export class GeometryManager extends ExtensionComponent {
             data.timerId = 0;
             if (!this._windowData.has(win)) return GLib.SOURCE_REMOVE;
 
-            const geo = this._geometryCache[appId];
+            const geo = this._lookupGeometry(win, appId);
             if (geo && tries < VERIFY_MAX_TRIES && !this._matchesGeometry(win, geo)) {
                 log(`[Geometry] ${appId} moved itself after restore; reapplying (${tries + 1}/${VERIFY_MAX_TRIES})`);
-                this._applyGeometry(win, appId, geo);
+                this._applyGeometry(win, appId, geo, data);
                 this._verifyRestore(win, data, appId, tries + 1);
             } else {
                 // Last resort: some apps insist on their own SIZE, but on
@@ -235,8 +251,10 @@ export class GeometryManager extends ExtensionComponent {
                     !isMaximized(win) && !win.is_fullscreen()) {
                     try {
                         const t = this._clampToWorkArea(win, geo);
+                        const before = win.get_frame_rect();
                         log(`[Geometry] ${appId} kept its own size; enforcing position only`);
                         win.move_frame(true, t.x, t.y);
+                        if (this._shouldGlide(data)) this._glide(win, before, t);
                     } catch (e) {}
                 }
                 this._settleLater(win, data);
@@ -281,7 +299,85 @@ export class GeometryManager extends ExtensionComponent {
         return { x, y, w, h };
     }
 
-    _applyGeometry(win, appId, geo) {
+    /**
+     * Per-title lookup with app-level fallback.
+     *
+     * Multiple windows of one app share a wm_class, so a single slot per
+     * app meant the slot held whatever window was touched LAST — a Files
+     * window would inherit the Trash window's geometry. Distinctly titled
+     * windows (Nautilus folders, Trash, mounted drives) now get their own
+     * sub-slot. Apps with volatile titles (browsers: title = page) simply
+     * fall back to the app-level slot.
+     */
+    _lookupGeometry(win, appId) {
+        const entry = this._geometryCache[appId];
+        if (!entry) return null;
+        try {
+            const title = win.get_title();
+            if (title && entry.titles) {
+                const t = entry.titles[title.substring(0, 80)];
+                if (t) return t;
+            }
+        } catch (e) {}
+        return entry;
+    }
+
+    _writeTitleGeo(entry, win, geo) {
+        let title = null;
+        try { title = win.get_title(); } catch (e) {}
+        if (!title) return;
+        title = title.substring(0, 80);
+
+        entry.titles = entry.titles || {};
+        const t = entry.titles[title] || {};
+        Object.assign(t, geo, { last_seen: Date.now() });
+        entry.titles[title] = t;
+
+        // Cap sub-slots per app (browsers would otherwise store one per page)
+        const keys = Object.keys(entry.titles);
+        if (keys.length > MAX_TITLES_PER_APP) {
+            keys.sort((a, b) => (entry.titles[a].last_seen || 0) - (entry.titles[b].last_seen || 0));
+            while (keys.length > MAX_TITLES_PER_APP)
+                delete entry.titles[keys.shift()];
+        }
+    }
+
+    /**
+     * Glides the window's actor from its previous position to the restored
+     * one instead of teleporting. The frame is moved instantly (as before);
+     * the visual actor is offset back to where it was and eased to zero, so
+     * the correction reads as a deliberate slide, not remote control.
+     * Position only — scaling the actor to animate size would distort the
+     * window contents.
+     */
+    _glide(win, before, target) {
+        try {
+            const actor = win.get_compositor_private();
+            if (!actor) return;
+
+            const dx = before.x - target.x;
+            const dy = before.y - target.y;
+            if (Math.abs(dx) < GLIDE_MIN_DELTA && Math.abs(dy) < GLIDE_MIN_DELTA) return;
+
+            actor.remove_transition('translation-x');
+            actor.remove_transition('translation-y');
+            actor.translation_x = dx;
+            actor.translation_y = dy;
+            actor.ease({
+                translation_x: 0,
+                translation_y: 0,
+                duration: GLIDE_DURATION_MS,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        } catch (e) {}
+    }
+
+    /** Animate only when the window has been visible long enough to notice */
+    _shouldGlide(data) {
+        return data && (GLib.get_monotonic_time() - data.createdAt) > GLIDE_AFTER_MS * 1000;
+    }
+
+    _applyGeometry(win, appId, geo, data = null) {
         if (win.is_fullscreen()) return;
 
         try {
@@ -292,8 +388,11 @@ export class GeometryManager extends ExtensionComponent {
                 if (isMaximized(win) && !geo.max) unmaximize(win);
                 if (!isMaximized(win)) {
                     const t = this._clampToWorkArea(win, geo);
+                    const before = win.get_frame_rect();
                     log(`[Geometry] Restoring ${appId} to ${t.x},${t.y} [${t.w}x${t.h}]`);
                     win.move_resize_frame(true, t.x, t.y, t.w, t.h);
+                    if (!geo.max && this._shouldGlide(data))
+                        this._glide(win, before, t);
                 }
             }
             if (geo.max && !isMaximized(win)) {
@@ -326,10 +425,11 @@ export class GeometryManager extends ExtensionComponent {
         // (Previously maximized windows were skipped entirely, so an app
         // closed maximized reopened as a floating window.)
         if (isMaximized(win)) {
-            const geo = this._geometryCache[appId] || {};
-            geo.max = true;
-            geo.last_seen = Date.now();
-            this._geometryCache[appId] = geo;
+            const entry = this._geometryCache[appId] || {};
+            entry.max = true;
+            entry.last_seen = Date.now();
+            this._writeTitleGeo(entry, win, { max: true });
+            this._geometryCache[appId] = entry;
             this._queueSave();
             return;
         }
@@ -337,16 +437,21 @@ export class GeometryManager extends ExtensionComponent {
         const rect = win.get_frame_rect();
         if (rect.width < 50 || rect.height < 50) return;
 
-        this._geometryCache[appId] = {
+        const entry = this._geometryCache[appId] || {};
+        Object.assign(entry, {
             x: rect.x,
             y: rect.y,
             w: rect.width,
             h: rect.height,
             max: false,
             last_seen: Date.now()
-        };
+        });
+        this._writeTitleGeo(entry, win, {
+            x: rect.x, y: rect.y, w: rect.width, h: rect.height, max: false
+        });
+        this._geometryCache[appId] = entry;
 
-        log(`[Geometry] Saved ${appId}: ${rect.x},${rect.y} [${rect.width}x${rect.height}]`);
+        log(`[Geometry] Saved ${appId} ('${win.get_title?.() ?? ''}'): ${rect.x},${rect.y} [${rect.width}x${rect.height}]`);
         this._queueSave();
     }
 

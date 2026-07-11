@@ -9,7 +9,7 @@ import { GeometryManager } from './geometry.js';
 import { ClockManager } from './clock.js';
 import { AppsManager } from './apps.js';
 import { PanelsManager } from './panels.js';
-// import { CornersManager } from './corners.js';
+import { CornersManager } from './corners.js';
 // import { DockManager } from './dock.js';
 // import { MimicManager } from './mimic.js';
 
@@ -27,7 +27,7 @@ export function getComponents() {
         GeometryManager,
         ClockManager,
         PanelsManager,
-        // CornersManager,
+        CornersManager,
         // DockManager,
         // MimicManager,
         AppsManager,

@@ -3,6 +3,41 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.03.2 (version 9)
+
+### Window Corners (re-enabled, rewritten)
+- Uniform rounded corners for application windows: all four corners get the
+  same antialiased rounding (new keys `corners-enabled`, `corners-radius`,
+  default 12), fixing the rounded-top/flat-bottom look of legacy apps.
+  Maximized and fullscreen windows are automatically square.
+- The mask is now computed against the frame rect INSIDE the actor buffer;
+  the previous shader rounded the actor's corners, which for client-side
+  decorated apps meant rounding the invisible drop-shadow margins instead
+  of the window. Ported from the legacy Clutter.ShaderEffect path to a
+  Shell.GLSLEffect fragment snippet with smoothstep antialiasing (the old
+  'discard' produced jagged edges).
+- Removed the "Flatten Windows" (square) mode: apps draw their own rounded
+  top corners and the pixels outside that curve do not exist, so an effect
+  can only remove pixels, never invent content. The preferences page states
+  this limitation. Also removed the shell-CSS injection that fought
+  PanelsManager with !important rules on the same selectors.
+
+## 26.07.03 (version 8)
+
+### Window geometry
+- Per-title memory within each app: windows of one app sharing a wm_class
+  (Nautilus Files vs Trash vs mounted drives) previously shared a single
+  slot, so the last-touched window's geometry leaked onto its siblings.
+  Distinctly titled windows now get their own sub-slot (up to 10 per app,
+  oldest pruned); apps with volatile titles such as browsers fall back to
+  the app-level slot.
+- Restore no longer feels like remote control: the first attempt now runs
+  immediately (fast apps get placed while the map animation still covers
+  the window), and any correction applied to an already-visible window
+  glides there over 220ms instead of teleporting. Sub-8px corrections are
+  not animated; size changes remain instant to avoid distorting window
+  contents. Glide state is reset if a window is untracked mid-animation.
+
 ## 26.07.02.6 (version 7)
 
 ### Window geometry

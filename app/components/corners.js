@@ -1,327 +1,204 @@
-import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import GLib from 'gi://GLib';
-import Gio from 'gi://Gio'; // Added missing import
-import St from 'gi://St';
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { log, logError } from '../util/logger.js';
 import { ExtensionComponent } from './base.js';
+import { isMaximized } from '../util/compat.js';
 
-// --- GLSL SHADER SOURCE ---
-// This runs on the GPU for every pixel of the window.
-// It calculates if a pixel is outside the corner radius and discards it.
-const SHADER_SOURCE = `
-uniform sampler2D tex;
-uniform float height;
-uniform float width;
-uniform float radius;
+/**
+ * Uniform window corner rounding.
+ *
+ * Rounds ALL four corners of every normal window with an antialiased GPU
+ * mask, so legacy apps with rounded tops and flat bottoms look consistent
+ * with modern ones. Maximized and fullscreen windows are automatically
+ * square (radius forced to 0), matching the user's expectation that a
+ * maximized window should not float on rounded corners.
+ *
+ * What the previous implementation got wrong, and this one fixes:
+ *
+ * 1. FRAME-AWARE MASKING. A window's actor buffer includes the drop-shadow
+ *    margins around the visible window (30+ px per side for CSD apps).
+ *    Rounding the ACTOR's corners therefore rounded the invisible shadow,
+ *    not the window. The mask here is computed against the frame rect's
+ *    position INSIDE the buffer, passed to the shader as uniforms; pixels
+ *    outside the frame (the shadow) are left untouched.
+ *
+ * 2. Shell.GLSLEffect snippet instead of the legacy Clutter.ShaderEffect
+ *    + set_shader_source path, and smoothstep antialiasing instead of
+ *    'discard' (which produced jagged staircase edges).
+ *
+ * 3. No shell-CSS side effects: the old version injected '!important'
+ *    rules on '#panel .panel-button', fighting PanelsManager's styling.
+ *    This component touches application windows only.
+ *
+ * Deliberate non-feature: a "force square" mode is not possible. Client-
+ * side-decorated apps draw their own rounded top corners; the pixels
+ * outside that curve do not exist in the client's buffer, and a shader can
+ * only remove pixels, never invent window content. Uniformity is achieved
+ * by rounding the flat corners to match, never the reverse.
+ */
 
-void main () {
-    // Standard texture lookup
-    vec4 color = cogl_color_in * texture2D(tex, cogl_tex_coord_in[0].xy);
-    
-    // Convert texture coordinates (0.0 - 1.0) to pixel coordinates
-    vec2 pos = cogl_tex_coord_in[0].xy * vec2(width, height);
-    
-    // Determine the center of the closest corner circle
-    vec2 center = vec2(0.0);
-    bool in_corner = false;
-    
-    if (pos.x < radius && pos.y < radius) {
-        // Top Left
-        center = vec2(radius, radius);
-        in_corner = true;
-    } else if (pos.x > width - radius && pos.y < radius) {
-        // Top Right
-        center = vec2(width - radius, radius);
-        in_corner = true;
-    } else if (pos.x < radius && pos.y > height - radius) {
-        // Bottom Left
-        center = vec2(radius, height - radius);
-        in_corner = true;
-    } else if (pos.x > width - radius && pos.y > height - radius) {
-        // Bottom Right
-        center = vec2(width - radius, height - radius);
-        in_corner = true;
-    }
-    
-    // If we are in a corner region, check distance from center
-    if (in_corner) {
-        if (distance(pos, center) > radius) {
-            discard; // Cut it out!
-        }
-    }
-    
-    cogl_color_out = color;
+const DECLARATIONS = `
+uniform vec4 bounds;      // frame rect inside the buffer: x1, y1, x2, y2
+uniform float clip_radius;
+uniform vec2 tex_size;    // buffer size
+`;
+
+// Nearest-point-on-inner-rect trick: for pixels inside the frame, clamp the
+// position to the radius-inset rect; the distance to that point is 0 for the
+// whole interior and grows only inside the corner squares, giving a perfect
+// circular falloff with 1px smoothstep antialiasing.
+const CODE = `
+vec2 pos = cogl_tex_coord0_in.xy * tex_size;
+if (clip_radius > 0.5 &&
+    pos.x >= bounds.x && pos.y >= bounds.y &&
+    pos.x <= bounds.z && pos.y <= bounds.w) {
+    vec2 fmin = bounds.xy + vec2(clip_radius);
+    vec2 fmax = bounds.zw - vec2(clip_radius);
+    vec2 nearest = clamp(pos, fmin, fmax);
+    float d = distance(pos, nearest) - clip_radius;
+    cogl_color_out = cogl_color_out * (1.0 - smoothstep(-0.5, 0.5, d));
 }
 `;
 
-// --- CUSTOM EFFECT CLASS ---
-// Wraps the generic Clutter.ShaderEffect to handle our uniforms (radius, size)
-const RoundedCornerEffect = GObject.registerClass({
-    GTypeName: 'LesionRoundedCornerEffect',
-}, class RoundedCornerEffect extends Clutter.ShaderEffect {
-    _init(radius) {
-        super._init({ shader_type: Clutter.ShaderType.FRAGMENT_SHADER });
-        this._radius = radius;
-        this.set_shader_source(SHADER_SOURCE);
+const RoundedCornersEffect = GObject.registerClass({
+    GTypeName: 'LesionRoundedCornersEffect',
+}, class RoundedCornersEffect extends Shell.GLSLEffect {
+    vfunc_build_pipeline() {
+        this.add_glsl_snippet(Shell.SnippetHook.FRAGMENT, DECLARATIONS, CODE, false);
     }
 
-    vfunc_paint_target(paint_node, paint_context) {
-        const actor = this.get_actor();
-        if (!actor) return;
-
-        const [width, height] = actor.get_size();
-
-        // Pass uniforms to the GPU
-        // Fix: Ensure values are explicitly floats for the shader
-        this.set_uniform_value('width', parseFloat(width));
-        this.set_uniform_value('height', parseFloat(height));
-        this.set_uniform_value('radius', parseFloat(this._radius));
-
-        // Chain up to draw
-        super.vfunc_paint_target(paint_node, paint_context);
-    }
-
-    updateRadius(radius) {
-        this._radius = radius;
-        this.queue_repaint();
+    update(frameX, frameY, frameW, frameH, bufW, bufH, radius) {
+        try {
+            this.set_uniform_float(this.get_uniform_location('bounds'), 4,
+                [frameX, frameY, frameX + frameW, frameY + frameH]);
+            this.set_uniform_float(this.get_uniform_location('clip_radius'), 1, [radius]);
+            this.set_uniform_float(this.get_uniform_location('tex_size'), 2, [bufW, bufH]);
+            this.queue_repaint();
+        } catch (e) {
+            logError('[Corners] uniform update failed', e);
+        }
     }
 });
 
-/**
- * Manages Window Effects (Mutter Level) and Shell Styles
- */
 export class CornersManager extends ExtensionComponent {
-    
-    onEnable() {
-        logError("CornersManager (Mutter): Initializing...");
-        
-        this._cssFile = null;
-        this._generatedFile = 'dynamic-corners.css';
-        this._windowSignals = []; // Track signals connected to individual window objects if needed
-        this._displaySignal = null;
-        
-        // Initial Sync
-        this._sync();
 
-        // Settings Listeners
-        this.observe('changed::corners-enabled', () => this._sync());
-        this.observe('changed::corners-radius', () => {
-            // Live update for radius to avoid full destruction/recreation
-            this._updateExistingWindowsRadius(); 
+    onEnable() {
+        // win -> { effect, sigs: [] }
+        this._windows = new Map();
+
+        const id = global.display.connect('window-created', (d, win) => {
+            // The compositor actor may not exist yet at this point
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                this._maybeAttach(win);
+                return GLib.SOURCE_REMOVE;
+            });
         });
-        this.observe('changed::corners-flat', () => this._sync());
+        this._signals.push({ obj: global.display, id });
+
+        this._syncAll();
+
+        this.observe('changed::corners-enabled', () => this._syncAll());
+        this.observe('changed::corners-radius', () => this._syncAll());
     }
 
     onDisable() {
-        logError("CornersManager: Disabling...");
-        this._disableWindowEffects();
-        this._unloadShellStyles();
+        this._detachAll();
     }
 
-    _sync() {
-        const settings = this.getSettings();
-        const enabled = settings.get_boolean('corners-enabled');
+    _enabled() {
+        return this.getSettings().get_boolean('corners-enabled') &&
+               this.getSettings().get_int('corners-radius') > 0;
+    }
 
-        if (!enabled) {
-            this._disableWindowEffects();
-            this._unloadShellStyles();
+    _syncAll() {
+        if (!this._enabled()) {
+            this._detachAll();
             return;
         }
-
-        const isFlat = settings.get_boolean('corners-flat');
-        const radius = isFlat ? 0 : settings.get_int('corners-radius');
-
-        // 1. Shell UI (Still needs CSS)
-        this._syncShell(radius, isFlat);
-
-        // 2. Windows (Mutter Shader)
-        // If flat, we just disable the effect (radius 0 shader is wasteful)
-        if (isFlat || radius === 0) {
-            this._disableWindowEffects();
-        } else {
-            this._enableWindowEffects(radius);
-        }
+        global.display.list_all_windows().forEach(win => this._maybeAttach(win));
+        for (const win of this._windows.keys())
+            this._updateWindow(win);
     }
 
-    // --- WINDOW MANAGEMENT (MUTTER/CLUTTER) ---
-
-    // Helper to abstract the API change across GNOME versions
-    _getWindowActors() {
-        if (global.get_window_actors) {
-            return global.get_window_actors();
-        }
-        
-        // GNOME 45+ fallback: Iterate MetaWindows and get their actors
-        const actors = [];
-        const windows = global.display.list_all_windows(); 
-        for (const win of windows) {
-            const actor = win.get_compositor_private();
-            if (actor) actors.push(actor);
-        }
-        return actors;
+    _shouldRound(win) {
+        if (!win) return false;
+        const t = win.get_window_type();
+        return t === Meta.WindowType.NORMAL ||
+               t === Meta.WindowType.DIALOG ||
+               t === Meta.WindowType.MODAL_DIALOG;
     }
 
-    _enableWindowEffects(radius) {
-        logError(`CornersManager: Enabling Window Shaders (r=${radius})`);
-        
-        // 1. Apply to existing windows
-        this._getWindowActors().forEach(actor => {
-            this._applyEffectToActor(actor, radius);
-        });
+    _maybeAttach(win) {
+        if (!this._enabled()) return;
+        if (!this._shouldRound(win) || this._windows.has(win)) return;
 
-        // 2. Watch for new windows
-        if (!this._displaySignal) {
-            this._displaySignal = global.display.connect('window-created', (display, window) => {
-                // Wait for the actor to be ready
-                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                   const actor = window.get_compositor_private();
-                   if (actor) {
-                       this._applyEffectToActor(actor, radius);
-                   }
-                   return GLib.SOURCE_REMOVE;
-                });
-            });
-        }
-    }
+        const actor = win.get_compositor_private();
+        if (!actor) return;
 
-    _disableWindowEffects() {
-        // 1. Stop watching
-        if (this._displaySignal) {
-            global.display.disconnect(this._displaySignal);
-            this._displaySignal = null;
-        }
-
-        // 2. Remove effects
-        this._getWindowActors().forEach(actor => {
-            this._removeEffectFromActor(actor);
-        });
-    }
-
-    _applyEffectToActor(actor, radius) {
-        if (!actor || actor.is_destroyed()) return;
-
-        // Skip if already has OUR effect
-        const existing = actor.get_effect('lesion-corners');
-        if (existing) {
-            if (existing instanceof RoundedCornerEffect) {
-                existing.updateRadius(radius);
-            }
-            return;
-        }
-
-        // Check window type (don't round fullscreen, desktop, etc)
-        const win = actor.meta_window;
-        if (win) {
-             const type = win.get_window_type();
-             if (type === Meta.WindowType.DESKTOP || 
-                 type === Meta.WindowType.DOCK || 
-                 win.is_fullscreen()) {
-                 return;
-             }
-        }
-
-        const effect = new RoundedCornerEffect(radius);
-
-        // Fix: Add resize listener to trigger repaint when window size changes
-        const sizeId = actor.connect('notify::size', () => effect.queue_repaint());
-        effect._sizeSignalId = sizeId; // Store signal ID on the effect for cleanup
-
-        actor.add_effect_with_name('lesion-corners', effect);
-    }
-
-    _removeEffectFromActor(actor) {
-        if (!actor || actor.is_destroyed()) return;
-        
-        const effect = actor.get_effect('lesion-corners');
-        if (effect) {
-            // Cleanup the size listener we added
-            if (effect._sizeSignalId) {
-                actor.disconnect(effect._sizeSignalId);
-            }
-            actor.remove_effect_by_name('lesion-corners');
-        }
-    }
-
-    _updateExistingWindowsRadius() {
-        const settings = this.getSettings();
-        const isFlat = settings.get_boolean('corners-flat');
-        const radius = isFlat ? 0 : settings.get_int('corners-radius');
-
-        if (isFlat || radius === 0) {
-            this._disableWindowEffects();
-            return;
-        }
-
-        // If not running, start running
-        if (!this._displaySignal) {
-            this._enableWindowEffects(radius);
-            return;
-        }
-
-        // Just update values
-        this._getWindowActors().forEach(actor => {
-            const effect = actor.get_effect('lesion-corners');
-            if (effect && effect instanceof RoundedCornerEffect) {
-                effect.updateRadius(radius);
-            } else {
-                this._applyEffectToActor(actor, radius);
-            }
-        });
-    }
-
-    // --- SHELL UI (CSS) ---
-    // Kept for Panels, Search, etc.
-    
-    _syncShell(radius, isFlat) {
-        this._unloadShellStyles();
-        
-        // Ensure style dir exists
-        const styleDir = GLib.build_filenamev([this._extension.path, 'style']);
+        const effect = new RoundedCornersEffect();
         try {
-             if (!GLib.file_test(styleDir, GLib.FileTest.EXISTS)) {
-                 Gio.File.new_for_path(styleDir).make_directory_with_parents(null);
-             }
-        } catch(e) {}
-
-        const cssContent = `
-            .window-clone-border, 
-            .modal-dialog, 
-            .workspace-thumbnail-indicator,
-            #panel,
-            #panel .panel-button,
-            .overview-controls,
-            .window-preview {
-                border-radius: ${radius}px !important;
-            }
-            ${isFlat ? `#panel, .panel-button { border-radius: 0px !important; }` : ''}
-        `;
-
-        try {
-            const path = GLib.build_filenamev([styleDir, this._generatedFile]);
-            const file = Gio.File.new_for_path(path);
-            file.replace_contents(cssContent, null, false, Gio.FileCreateFlags.NONE, null);
-
-            const themeContext = St.ThemeContext.get_for_stage(global.stage);
-            const theme = themeContext.get_theme();
-            theme.load_stylesheet(file);
-            this._cssFile = file;
-            themeContext.set_theme(theme);
+            actor.add_effect_with_name('lesion-corners', effect);
         } catch (e) {
-            logError("Failed to apply shell corners", e);
+            logError('[Corners] failed to attach effect', e);
+            return;
+        }
+
+        const sigs = [];
+        // size-changed also fires on maximize/unmaximize/fullscreen, which
+        // is what flips the radius to 0 and back.
+        sigs.push(win.connect('size-changed', () => this._updateWindow(win)));
+        sigs.push(win.connect('unmanaged', () => this._detachWindow(win)));
+
+        this._windows.set(win, { effect, sigs });
+        this._updateWindow(win);
+    }
+
+    _updateWindow(win) {
+        const rec = this._windows.get(win);
+        if (!rec) return;
+
+        try {
+            const buffer = win.get_buffer_rect();
+            const frame = win.get_frame_rect();
+
+            let radius = this.getSettings().get_int('corners-radius');
+            if (isMaximized(win) || win.is_fullscreen())
+                radius = 0; // Square when maximized/fullscreen
+            radius = Math.min(radius, Math.floor(Math.min(frame.width, frame.height) / 2));
+
+            rec.effect.update(
+                frame.x - buffer.x,
+                frame.y - buffer.y,
+                frame.width,
+                frame.height,
+                buffer.width,
+                buffer.height,
+                radius
+            );
+        } catch (e) {
+            logError('[Corners] update failed', e);
         }
     }
 
-    _unloadShellStyles() {
-        if (this._cssFile) {
-            const themeContext = St.ThemeContext.get_for_stage(global.stage);
-            const theme = themeContext.get_theme();
-            theme.unload_stylesheet(this._cssFile);
-            this._cssFile = null;
-            themeContext.set_theme(theme);
-        }
+    _detachWindow(win) {
+        const rec = this._windows.get(win);
+        if (!rec) return;
+
+        rec.sigs.forEach(id => {
+            try { win.disconnect(id); } catch (e) {}
+        });
+        try {
+            const actor = win.get_compositor_private();
+            if (actor) actor.remove_effect_by_name('lesion-corners');
+        } catch (e) {}
+
+        this._windows.delete(win);
+    }
+
+    _detachAll() {
+        for (const win of [...this._windows.keys()])
+            this._detachWindow(win);
     }
 }
