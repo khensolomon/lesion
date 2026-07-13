@@ -3,6 +3,103 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.12.4 (version 15)
+
+### Window Corners (shadow architecture, ported from RWC Reborn)
+- The corner marks are the window's OWN drop shadow: apps draw their shadow
+  shaped for the original corners, hugging them densely, and cutting a
+  rounded corner exposes the shadow hiding underneath — visible over light
+  backgrounds, invisible over dark ones (which is why the purple terminal
+  looked correct). No mask tuning can fix this; the shadow itself must be
+  replaced. Following Rounded Window Corners Reborn's architecture:
+  - The mask shader now removes everything outside the frame bounds (the
+    app's entire in-buffer shadow) in addition to rounding the corners.
+  - Each rounded window gets a replacement shadow actor below it, shaped
+    for the rounded window: a white rounded box casting a CSS box-shadow,
+    with a second shader erasing the white body so only the shadow remains.
+  - The shadow tracks the window through moves, resizes, animations,
+    minimize, and focus changes (stronger shadow when focused), and hides
+    for maximized/fullscreen windows.
+
+## 26.07.12.3 (version 14)
+
+### Window Corners (mask math ported from Rounded Window Corners Reborn)
+- Fixed the corner marks becoming MORE visible in the last two builds: the
+  inward-biased antialiasing band was sitting over the window's brighter
+  interior pixels instead of its already-antialiased edge pixels, so each
+  inward step made the arc brighter. The mask now uses the field-proven
+  approach from Rounded Window Corners Reborn: an antialiasing band centered
+  exactly on the curve (radius +/- 0.5px) with a linear falloff, plain
+  multiply, and no fragment discard.
+- Removed the opacity-254 "culling" clamps on window and surface actors:
+  the misdiagnosed mechanism they addressed does not exist (RWC ships no
+  such workaround), and they added signal churn for nothing.
+- X11 clients (e.g. VSCode/Electron under Xwayland) now get the effect on
+  the surface child actor rather than the window actor, matching RWC —
+  the probable reason some applications appeared entirely unaffected.
+
+## 26.07.12.2 (version 13)
+
+### Window Corners
+- Further reduced the faint light arc remaining at corners of bright
+  windows over dark backgrounds: CSD windows draw a ~1px bright border
+  along their perimeter, and cutting exactly at the frame corner left that
+  border's arc at partial alpha. The cut is now biased half a pixel inward,
+  strongly attenuating the border arc without creating a jog where the
+  curve meets the straight edges.
+
+## 26.07.12 (version 12)
+
+### Window Corners
+- Fixed light "marks" at window corners (visible over dark backgrounds,
+  including on windows that were already rounded). Two causes addressed in
+  the mask shader: the antialiasing band was centered ON the curve, leaving
+  the boundary pixels of edges and corners at ~50% alpha (a light fringe
+  for bright windows); and any premultiplied-alpha mismatch could leak the
+  window color at partial weight in the cut region. The mask is now gated
+  strictly to the four corner squares (straight edges are never touched),
+  the antialiasing is biased fully inward so nothing survives at or outside
+  the mathematical curve, and fully-cut fragments are discarded — a
+  discarded fragment writes nothing, making the cut immune to blend-mode
+  and premultiplication differences.
+
+## 26.07.11.2 (version 11)
+
+### Window Corners
+- Fixed rounded corners still revealing an unpainted background: Mutter's
+  opaque-region culling checks the SURFACE actor's opacity (the child
+  holding the window texture), not the window actor that was previously
+  clamped. Both actors are now clamped to 254 while the effect is active
+  and restored on detach.
+
+### Window geometry
+- Fixed the repeated animation storm when pasting files over existing ones
+  in Files: conflict dialogs report type NORMAL with no transient parent at
+  window-created (both are set moments later), so each dialog was tracked
+  as a new app window, animated to the app's saved position, and then saved
+  its own dialog geometry into the app slot. The window's nature is now
+  re-validated at restore time and on every save; late-identified dialogs
+  are untracked instead.
+- Restore animation is now a fade-through instead of a slide: the window
+  fades out (~90ms), moves while invisible, and fades back in at its
+  destination, eliminating the visible travel from the arbitrary spawn
+  position. A disable mid-fade restores full opacity.
+
+## 26.07.11 (version 10)
+
+### Window Corners
+- Fixed rounded corners revealing a white/unpainted region instead of the
+  window behind when overlapping: Mutter's opaque-region culling skips
+  painting whatever lies under a fully opaque window, so the transparent
+  corners exposed an unrendered area. The window actor's opacity is now
+  clamped to 254 while the effect is attached (visually indistinguishable,
+  disables the culling); the clamp is re-applied on notify::opacity because
+  the shell's map animation eases opacity back to 255, and 255 is restored
+  on detach.
+- Attach/skip decisions and frame/buffer rects are now logged in debug mode
+  to diagnose windows the effect does not reach; if the actor is not ready
+  at window-created, attachment retries on 'shown'.
+
 ## 26.07.03.2 (version 9)
 
 ### Window Corners (re-enabled, rewritten)

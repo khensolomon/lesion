@@ -46,9 +46,10 @@ const SAVE_DEBOUNCE_SEC = 2;      // Disk write debounce
 const PRUNE_MAX_AGE_DAYS = 180;   // Drop entries not seen for this long
 const PRUNE_MAX_ENTRIES = 300;    // Hard cap on stored apps
 const MAX_TITLES_PER_APP = 10;    // Per-title sub-slots kept per app
-const GLIDE_AFTER_MS = 250;       // Window visible longer than this -> glide, don't snap
-const GLIDE_DURATION_MS = 220;    // Glide animation length
-const GLIDE_MIN_DELTA = 8;        // Don't animate sub-8px corrections
+const ANIMATE_AFTER_MS = 250;     // Window visible longer than this -> fade-move, don't snap
+const FADE_OUT_MS = 90;           // Fade-out before an already-visible window is moved
+const FADE_IN_MS = 140;           // Fade-in at the destination
+const MOVE_MIN_DELTA = 8;         // Don't animate sub-8px corrections
 
 export class GeometryManager extends ExtensionComponent {
 
@@ -139,10 +140,9 @@ export class GeometryManager extends ExtensionComponent {
         try {
             const actor = win.get_compositor_private();
             if (actor) {
-                actor.remove_transition('translation-x');
-                actor.remove_transition('translation-y');
-                actor.translation_x = 0;
-                actor.translation_y = 0;
+                // A disable mid-fade must not leave the window invisible
+                actor.remove_transition('opacity');
+                if (actor.opacity === 0) actor.opacity = 255;
             }
         } catch (e) {}
 
@@ -223,6 +223,17 @@ export class GeometryManager extends ExtensionComponent {
 
     _beginRestore(win, data, appId) {
         if (data.restored) return;
+
+        // Re-validate: window type and transient parent are often set AFTER
+        // 'window-created' (exactly like the late wm_class). A paste-conflict
+        // dialog that slipped in as a "normal window" at creation is
+        // untracked here instead of being flown to the app's saved position.
+        if (!this._shouldManage(win)) {
+            log(`[Geometry] '${appId}' turned out to be a dialog/transient — untracking`);
+            this._untrackWindow(win);
+            return;
+        }
+
         data.restored = true;
         if (data.timerId) {
             GLib.source_remove(data.timerId);
@@ -253,8 +264,11 @@ export class GeometryManager extends ExtensionComponent {
                         const t = this._clampToWorkArea(win, geo);
                         const before = win.get_frame_rect();
                         log(`[Geometry] ${appId} kept its own size; enforcing position only`);
-                        win.move_frame(true, t.x, t.y);
-                        if (this._shouldGlide(data)) this._glide(win, before, t);
+                        const doMove = () => win.move_frame(true, t.x, t.y);
+                        if (this._shouldAnimate(data))
+                            this._fadeMove(win, before, { x: t.x, y: t.y, w: before.width, h: before.height }, doMove);
+                        else
+                            doMove();
                     } catch (e) {}
                 }
                 this._settleLater(win, data);
@@ -343,38 +357,53 @@ export class GeometryManager extends ExtensionComponent {
     }
 
     /**
-     * Glides the window's actor from its previous position to the restored
-     * one instead of teleporting. The frame is moved instantly (as before);
-     * the visual actor is offset back to where it was and eased to zero, so
-     * the correction reads as a deliberate slide, not remote control.
-     * Position only — scaling the actor to animate size would distort the
-     * window contents.
+     * Moves an already-visible window without visible travel: fade the
+     * actor out, apply the move while invisible, fade back in at the
+     * destination. The previous slide animation visibly departed from the
+     * arbitrary spawn position, which read as buggy rather than deliberate.
      */
-    _glide(win, before, target) {
+    _fadeMove(win, before, target, applyFn) {
+        const dx = Math.abs(before.x - target.x);
+        const dy = Math.abs(before.y - target.y);
+        const dw = Math.abs((before.width ?? before.w ?? 0) - (target.w ?? 0));
+        const dh = Math.abs((before.height ?? before.h ?? 0) - (target.h ?? 0));
+        if (dx < MOVE_MIN_DELTA && dy < MOVE_MIN_DELTA &&
+            dw < MOVE_MIN_DELTA && dh < MOVE_MIN_DELTA) {
+            applyFn();
+            return;
+        }
+
+        let actor = null;
+        try { actor = win.get_compositor_private(); } catch (e) {}
+        if (!actor) {
+            applyFn();
+            return;
+        }
+
         try {
-            const actor = win.get_compositor_private();
-            if (!actor) return;
-
-            const dx = before.x - target.x;
-            const dy = before.y - target.y;
-            if (Math.abs(dx) < GLIDE_MIN_DELTA && Math.abs(dy) < GLIDE_MIN_DELTA) return;
-
-            actor.remove_transition('translation-x');
-            actor.remove_transition('translation-y');
-            actor.translation_x = dx;
-            actor.translation_y = dy;
+            actor.remove_transition('opacity');
+            const prev = actor.opacity;
             actor.ease({
-                translation_x: 0,
-                translation_y: 0,
-                duration: GLIDE_DURATION_MS,
+                opacity: 0,
+                duration: FADE_OUT_MS,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onStopped: () => {
+                    try { applyFn(); } catch (e) {}
+                    actor.ease({
+                        opacity: prev,
+                        duration: FADE_IN_MS,
+                        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    });
+                },
             });
-        } catch (e) {}
+        } catch (e) {
+            applyFn();
+        }
     }
 
     /** Animate only when the window has been visible long enough to notice */
-    _shouldGlide(data) {
-        return data && (GLib.get_monotonic_time() - data.createdAt) > GLIDE_AFTER_MS * 1000;
+    _shouldAnimate(data) {
+        return data && (GLib.get_monotonic_time() - data.createdAt) > ANIMATE_AFTER_MS * 1000;
     }
 
     _applyGeometry(win, appId, geo, data = null) {
@@ -390,9 +419,11 @@ export class GeometryManager extends ExtensionComponent {
                     const t = this._clampToWorkArea(win, geo);
                     const before = win.get_frame_rect();
                     log(`[Geometry] Restoring ${appId} to ${t.x},${t.y} [${t.w}x${t.h}]`);
-                    win.move_resize_frame(true, t.x, t.y, t.w, t.h);
-                    if (!geo.max && this._shouldGlide(data))
-                        this._glide(win, before, t);
+                    const doMove = () => win.move_resize_frame(true, t.x, t.y, t.w, t.h);
+                    if (!geo.max && this._shouldAnimate(data))
+                        this._fadeMove(win, before, t, doMove);
+                    else
+                        doMove();
                 }
             }
             if (geo.max && !isMaximized(win)) {
@@ -419,6 +450,13 @@ export class GeometryManager extends ExtensionComponent {
 
         const appId = win.get_wm_class();
         if (!appId) return;
+
+        // Dialogs/transients must never write into the app slot, even if
+        // they were mis-typed as NORMAL at creation time.
+        if (!this._shouldManage(win)) {
+            this._untrackWindow(win);
+            return;
+        }
 
         // Maximized: remember the STATE, keep the last floating rect so
         // unmaximizing after restore returns to the remembered size.
