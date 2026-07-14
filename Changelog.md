@@ -3,6 +3,24 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.14 (version 16)
+
+### Window Corners
+- Fixed windows rendering as half a window after Maximize -> Restore: the
+  mask uniforms were baked while the actor still had its maximized
+  allocation, so the outside-the-frame deletion erased everything past the
+  midpoint. Uniforms now also refresh when the effect target's own size
+  settles (notify::size).
+- Shadow actor property bindings reduced to exact parity with Rounded
+  Window Corners Reborn (dropped the extra 'opacity' binding).
+
+### Window geometry
+- Fixed windows left permanently semi-transparent ("a bit of transparent"):
+  a second fade-move starting while one was mid-flight captured a partial
+  opacity as the resting value and restored the window to it. Follow-up
+  corrections during a fade now apply instantly instead of stacking fades,
+  and untracking restores any partial opacity to full.
+
 ## 26.07.12.4 (version 15)
 
 ### Window Corners (shadow architecture, ported from RWC Reborn)

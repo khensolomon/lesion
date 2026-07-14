@@ -140,9 +140,9 @@ export class GeometryManager extends ExtensionComponent {
         try {
             const actor = win.get_compositor_private();
             if (actor) {
-                // A disable mid-fade must not leave the window invisible
+                // A disable mid-fade must not leave the window translucent
                 actor.remove_transition('opacity');
-                if (actor.opacity === 0) actor.opacity = 255;
+                if (actor.opacity < 255) actor.opacity = 255;
             }
         } catch (e) {}
 
@@ -381,7 +381,15 @@ export class GeometryManager extends ExtensionComponent {
         }
 
         try {
-            actor.remove_transition('opacity');
+            // FIX: if a fade is already in flight, its captured 'prev' is the
+            // resting opacity — starting a second fade here would capture a
+            // PARTIAL value (e.g. 200) and "restore" the window to permanent
+            // semi-transparency. Apply follow-up corrections instantly instead.
+            if (actor.get_transition('opacity')) {
+                applyFn();
+                return;
+            }
+
             const prev = actor.opacity;
             actor.ease({
                 opacity: 0,

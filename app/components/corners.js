@@ -203,7 +203,18 @@ export class CornersManager extends ExtensionComponent {
         sigs.push(win.connect('notify::appears-focused', () => this._updateWindow(win)));
         sigs.push(win.connect('unmanaged', () => this._detachWindow(win)));
 
-        this._windows.set(win, { effect, sigs, actor, target, ...shadow });
+        // HALF-WINDOW FIX: on Maximize -> Restore, 'size-changed' fires while
+        // the actor still has its maximized allocation, baking a stale
+        // tex_size into the uniforms — the outside-the-frame deletion then
+        // erased everything past the midpoint. The actor's own size settles
+        // later, so refresh the uniforms when it does.
+        const targetSigs = [];
+        targetSigs.push({
+            obj: target,
+            id: target.connect('notify::size', () => this._updateWindow(win)),
+        });
+
+        this._windows.set(win, { effect, sigs, targetSigs, actor, target, ...shadow });
         this._updateWindow(win);
 
         log(`[Corners] attached to '${win.get_wm_class?.() ?? '?'}' ` +
@@ -239,8 +250,9 @@ export class CornersManager extends ExtensionComponent {
 
         // Track animations and visibility
         const bindings = [];
+        // Exactly RWC's binding set — notably WITHOUT 'opacity'
         for (const prop of ['pivot-point', 'translation-x', 'translation-y',
-                            'scale-x', 'scale-y', 'visible', 'opacity']) {
+                            'scale-x', 'scale-y', 'visible']) {
             try {
                 bindings.push(actor.bind_property(prop, shadow, prop,
                     GObject.BindingFlags.SYNC_CREATE));
@@ -326,6 +338,9 @@ export class CornersManager extends ExtensionComponent {
 
         rec.sigs.forEach(id => {
             try { win.disconnect(id); } catch (e) {}
+        });
+        (rec.targetSigs || []).forEach(sig => {
+            try { sig.obj.disconnect(sig.id); } catch (e) {}
         });
         (rec.bindings || []).forEach(b => {
             try { b.unbind(); } catch (e) {}
