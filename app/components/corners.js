@@ -153,6 +153,14 @@ export class CornersManager extends ExtensionComponent {
 
     _shouldRound(win) {
         if (!win) return false;
+        // Desktop Icons NG (ships with Ubuntu) manages the desktop itself as
+        // a window; rounding it and replacing its shadow would deform the
+        // desktop. RWC skips it for the same reason.
+        try {
+            if (win.gtk_application_id === 'com.rastersoft.ding' ||
+                win.gtkApplicationId === 'com.rastersoft.ding')
+                return false;
+        } catch (e) {}
         const t = win.get_window_type();
         return t === Meta.WindowType.NORMAL ||
                t === Meta.WindowType.DIALOG ||

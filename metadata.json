@@ -2,14 +2,15 @@
   "uuid": "lesion@lethil.me",
   "name": "Lesion",
   "description": "Demo extension with personalized settings",
-  "version": 16,
+  "version": 17,
   "settings-schema": "dev.lethil.lesion",
-  "version-name": "26.07.14",
+  "version-name": "26.07.14.2",
   "shell-version": [
     "46",
     "47",
     "48",
-    "49"
+    "49",
+    "50"
   ],
   "developer-name": "Khen Solomon Lethil",
   "debug": true,

@@ -84,7 +84,7 @@ export class HomePage extends Adw.PreferencesPage {
         this.add(navGroup);
 
         navGroup.add(this._createNavRow('Wallpaper Engine', 'Manage dual-mode backgrounds', 'preferences-desktop-wallpaper-symbolic', 'wallpaper'));
-        navGroup.add(this._createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-appearance-symbolic', 'styles'));
+        navGroup.add(this._createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-appearance-symbolic', 'css'));
         navGroup.add(this._createNavRow('Apps', 'Customize the app grid button', 'applications-development-symbolic', 'apps'));
 
         // --- 4. DATA MANAGEMENT ---

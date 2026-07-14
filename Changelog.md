@@ -3,6 +3,24 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.14.2 (version 17)
+
+### Compatibility
+- Added GNOME Shell 50 to supported versions. The GNOME 50 porting guide
+  lists no relevant changes to metadata, extension.js, or prefs.js, and no
+  changes to the APIs Lesion uses; all breaking changes from 46-49
+  (get_maximized, MaximizeFlags, St.BoxLayout vertical, Clutter blur) are
+  already isolated in app/util/compat.js. Note: GNOME 50 removed X11
+  sessions; Xwayland clients remain and the X11 client handling in the
+  corners component stays valid.
+
+### Fixes
+- Dashboard navigation: the "Window Styles" quick-access row targeted the
+  page id 'styles' while the CSS page is registered as 'css'.
+- Window Corners now skips Desktop Icons NG (ships with Ubuntu), which
+  manages the desktop itself as a window; rounding it and replacing its
+  shadow would deform the desktop.
+
 ## 26.07.14 (version 16)
 
 ### Window Corners
