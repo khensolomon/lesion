@@ -8,7 +8,7 @@ import GLib from 'gi://GLib';
 export const AppConfig = {
     // 1. Static Configuration
     defaults: {
-        id: 'dev.lethil.lesion',
+        id: 'org.gnome.shell.extensions.lethil',
         title: 'Gnome Split View',
         window: {
             width: 800,
@@ -31,7 +31,7 @@ export const AppConfig = {
         description: '',
         url: '',
         links: {},
-        "settings-schema": "dev.lethil.lesion", // Default to match XML
+        "settings-schema": "org.gnome.shell.extensions.lethil", // Default to match XML
         "developer-name": ""
     },
     
@@ -62,8 +62,8 @@ export const AppConfig = {
     },
 
     get schemaId() {
-        // Critical: Must match schemas/dev.lethil.lesion.gschema.xml
-        return this.metadata["settings-schema"] || "dev.lethil.lesion";
+        // Critical: Must match schemas/org.gnome.shell.extensions.lethil.gschema.xml
+        return this.metadata["settings-schema"] || "org.gnome.shell.extensions.lethil";
     },
     
     get developer() {

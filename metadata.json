@@ -2,9 +2,9 @@
   "uuid": "lesion@lethil.me",
   "name": "Lesion",
   "description": "Demo extension with personalized settings",
-  "version": 17,
-  "settings-schema": "dev.lethil.lesion",
-  "version-name": "26.07.14.2",
+  "version": 20,
+  "settings-schema": "org.gnome.shell.extensions.lethil",
+  "version-name": "26.07.14.5",
   "shell-version": [
     "46",
     "47",

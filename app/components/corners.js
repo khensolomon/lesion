@@ -128,27 +128,44 @@ export class CornersManager extends ExtensionComponent {
 
         this._syncAll();
 
-        this.observe('changed::corners-enabled', () => this._syncAll());
+        this.observe('changed::corners-enabled', () => this._rebuildAll());
+        this.observe('changed::transparency-enabled', () => this._rebuildAll());
         this.observe('changed::corners-radius', () => this._syncAll());
+        this.observe('changed::transparency-opacity', () => this._syncAll());
     }
 
     onDisable() {
         this._detachAll();
     }
 
-    _enabled() {
+    _cornersEnabled() {
         return this.getSettings().get_boolean('corners-enabled') &&
                this.getSettings().get_int('corners-radius') > 0;
     }
 
+    _transparencyEnabled() {
+        return this.getSettings().get_boolean('transparency-enabled');
+    }
+
+    _anyEnabled() {
+        return this._cornersEnabled() || this._transparencyEnabled();
+    }
+
     _syncAll() {
-        if (!this._enabled()) {
+        if (!this._anyEnabled()) {
             this._detachAll();
             return;
         }
         global.display.list_all_windows().forEach(win => this._maybeAttach(win));
         for (const win of this._windows.keys())
             this._updateWindow(win);
+    }
+
+    /** Full re-attach: needed when a feature toggle changes which per-window
+     *  machinery (effect + shadow) must exist. */
+    _rebuildAll() {
+        this._detachAll();
+        this._syncAll();
     }
 
     _shouldRound(win) {
@@ -168,7 +185,7 @@ export class CornersManager extends ExtensionComponent {
     }
 
     _maybeAttach(win) {
-        if (!this._enabled()) return;
+        if (!this._anyEnabled()) return;
         if (this._windows.has(win)) return;
         if (!this._shouldRound(win)) {
             log(`[Corners] skipping '${win?.get_wm_class?.() ?? '?'}' (type=${win?.get_window_type?.()})`);
@@ -196,15 +213,20 @@ export class CornersManager extends ExtensionComponent {
             }
         } catch (e) {}
 
-        const effect = new RoundedCornersEffect();
-        try {
-            target.add_effect_with_name('lesion-corners', effect);
-        } catch (e) {
-            logError('[Corners] failed to attach effect', e);
-            return;
+        // Corner machinery (offscreen effect + replacement shadow) only
+        // when rounding is on; transparency alone needs just the signals.
+        let effect = null;
+        let shadow = { shadow: null, bindings: [] };
+        if (this._cornersEnabled()) {
+            effect = new RoundedCornersEffect();
+            try {
+                target.add_effect_with_name('lesion-corners', effect);
+            } catch (e) {
+                logError('[Corners] failed to attach effect', e);
+                return;
+            }
+            shadow = this._createShadow(actor);
         }
-
-        const shadow = this._createShadow(actor);
 
         const sigs = [];
         sigs.push(win.connect('size-changed', () => this._updateWindow(win)));
@@ -275,31 +297,74 @@ export class CornersManager extends ExtensionComponent {
         if (!rec) return;
 
         try {
-            const buffer = win.get_buffer_rect();
-            const frame = win.get_frame_rect();
+            if (rec.effect) {
+                const buffer = win.get_buffer_rect();
+                const frame = win.get_frame_rect();
 
-            let radius = this.getSettings().get_int('corners-radius');
-            if (isMaximized(win) || win.is_fullscreen())
-                radius = 0;
-            radius = Math.min(radius, Math.floor(Math.min(frame.width, frame.height) / 2));
+                let radius = this.getSettings().get_int('corners-radius');
+                if (isMaximized(win) || win.is_fullscreen())
+                    radius = 0;
+                radius = Math.min(radius, Math.floor(Math.min(frame.width, frame.height) / 2));
 
-            const tw = rec.target?.get_width?.() || buffer.width;
-            const th = rec.target?.get_height?.() || buffer.height;
+                const tw = rec.target?.get_width?.() || buffer.width;
+                const th = rec.target?.get_height?.() || buffer.height;
 
-            rec.effect.update(
-                frame.x - buffer.x,
-                frame.y - buffer.y,
-                frame.width,
-                frame.height,
-                tw,
-                th,
-                radius
-            );
+                rec.effect.update(
+                    frame.x - buffer.x,
+                    frame.y - buffer.y,
+                    frame.width,
+                    frame.height,
+                    tw,
+                    th,
+                    radius
+                );
 
-            this._updateShadow(win, rec, frame, buffer, radius);
+                this._updateShadow(win, rec, frame, buffer, radius);
+            }
+
+            this._updateTransparency(win, rec);
         } catch (e) {
             logError('[Corners] update failed', e);
         }
+    }
+
+    /**
+     * Unfocused-only transparency. The FOCUSED window is always fully
+     * opaque — dimming the window you're actively inspecting (a graphics
+     * editor, say) lets the background bleed into your visual judgement,
+     * which is exactly the annoyance that motivated this design.
+     * Skips actors with an opacity transition in flight (the geometry
+     * fade-move owns those moments).
+     */
+    _updateTransparency(win, rec) {
+        const actor = rec.actor;
+        if (!actor) return;
+
+        let op = 255;
+        if (this._transparencyEnabled() && !win.appears_focused) {
+            const pct = this.getSettings().get_int('transparency-opacity');
+            op = Math.round(255 * Math.min(100, Math.max(50, pct)) / 100);
+        }
+
+        try {
+            if (actor.get_transition('opacity')) {
+                // A geometry fade-move owns the actor right now. If focus
+                // changed mid-fade, the fade will restore a stale opacity —
+                // retry once after it has certainly finished.
+                if (!rec.transparencyRetryId) {
+                    rec.transparencyRetryId = GLib.timeout_add(
+                        GLib.PRIORITY_DEFAULT, 400, () => {
+                            rec.transparencyRetryId = 0;
+                            if (this._windows.has(win))
+                                this._updateTransparency(win, rec);
+                            return GLib.SOURCE_REMOVE;
+                        });
+                }
+                return;
+            }
+            if (actor.opacity !== op)
+                actor.opacity = op;
+        } catch (e) {}
     }
 
     _updateShadow(win, rec, frame, buffer, radius) {
@@ -344,6 +409,10 @@ export class CornersManager extends ExtensionComponent {
         const rec = this._windows.get(win);
         if (!rec) return;
 
+        if (rec.transparencyRetryId) {
+            GLib.source_remove(rec.transparencyRetryId);
+            rec.transparencyRetryId = 0;
+        }
         rec.sigs.forEach(id => {
             try { win.disconnect(id); } catch (e) {}
         });
@@ -359,6 +428,12 @@ export class CornersManager extends ExtensionComponent {
         try {
             const target = rec.target ?? rec.actor ?? win.get_compositor_private();
             if (target) target.remove_effect_by_name('lesion-corners');
+        } catch (e) {}
+        try {
+            // Restore full opacity if transparency was managing this window
+            if (rec.actor && rec.actor.opacity !== 255 &&
+                !rec.actor.get_transition('opacity'))
+                rec.actor.opacity = 255;
         } catch (e) {}
 
         this._windows.delete(win);

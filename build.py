@@ -17,7 +17,12 @@ USAGE EXAMPLES:
    Excludes 'build.py' from the final zip file.
    $ python3 build.py --no-self
 
-3. Help
+3. EGO Submission Build
+   Clean package for extensions.gnome.org: no dev tooling, sanitized
+   metadata.json, gnome-extensions pack naming.
+   $ python3 build.py --ego
+
+4. Help
    View available options.
    $ python3 build.py --help
 """
@@ -32,6 +37,24 @@ import sys
 
 # --- CONFIGURATION ---
 TARGET_DIR = os.path.expanduser("~/dev/backup")
+
+# Keys extensions.gnome.org recognizes in metadata.json; everything else is
+# stripped from the packaged metadata in --ego mode (review hygiene). The
+# runtime tolerates the missing keys: AppConfig falls back to debug=false
+# and the About page guards missing links.
+EGO_METADATA_KEYS = [
+    "uuid", "name", "description", "shell-version", "url",
+    "version", "version-name", "settings-schema", "gettext-domain",
+    "session-modes", "donations",
+]
+
+# Development-only content that must not reach an EGO submission package
+EGO_EXCLUDE = [
+    "build.py", "install.py", "dev.sh", "reload.sh", "restart.sh",
+    "app.js",            # standalone gjs runner for UI mockups
+    "ui/*", "notes*", "tmp*", "Todo.md",
+    "desire-*", "prompt*",
+]
 
 # Global exclude patterns (always ignored)
 ALWAYS_EXCLUDE = [
@@ -58,6 +81,18 @@ def parse_arguments():
         action="store_false", 
         dest="include_self",
         help="Do NOT include this build.py script in the final zip file."
+    )
+
+    parser.add_argument(
+        "--ego",
+        action="store_true",
+        help=(
+            "Build a submission package for extensions.gnome.org: excludes "
+            "all development tooling, strips nonstandard keys from "
+            "metadata.json inside the zip, and names the file "
+            "<uuid>.shell-extension.zip (the `gnome-extensions pack` "
+            "convention). Implies --no-self."
+        ),
     )
 
     # Default is True (include self)
@@ -89,8 +124,12 @@ def main():
         sys.exit(1)
 
     # 2. Define Filename
-    zip_filename = f"{uuid}_v{version}.zip"
-    print(f"Packaging: {zip_filename}")
+    if args.ego:
+        zip_filename = f"{uuid}.shell-extension.zip"
+        print(f"Packaging (EGO submission): {zip_filename}")
+    else:
+        zip_filename = f"{uuid}_v{version}.zip"
+        print(f"Packaging: {zip_filename}")
 
     # 3. Create Zip File
     try:
@@ -106,8 +145,21 @@ def main():
                     if should_exclude(archive_name, ALWAYS_EXCLUDE):
                         continue
 
-                    # 2. Check build.py specifically
-                    if file == os.path.basename(__file__) and not args.include_self:
+                    # 2. EGO mode: exclude dev tooling, sanitize metadata
+                    if args.ego:
+                        if should_exclude(archive_name, EGO_EXCLUDE):
+                            print(f"   [EGO excluded] {archive_name}")
+                            continue
+                        if archive_name == "metadata.json":
+                            clean = {k: data[k] for k in EGO_METADATA_KEYS if k in data}
+                            dropped = sorted(set(data) - set(clean))
+                            if dropped:
+                                print(f"   [EGO metadata] stripped keys: {', '.join(dropped)}")
+                            zipf.writestr(archive_name, json.dumps(clean, indent=2) + "\n")
+                            continue
+
+                    # 3. Check build.py specifically
+                    if file == os.path.basename(__file__) and not (args.include_self and not args.ego):
                         print(f"   [Excluded] Builder script ({file})")
                         continue
                     

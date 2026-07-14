@@ -39,6 +39,34 @@ export function createCornersUI() {
     settings.bind('corners-enabled', radiusRow, 'sensitive', Gio.SettingsBindFlags.GET);
     mainGroup.add(radiusRow);
 
+    // --- Window Transparency ---
+    const transGroup = new Adw.PreferencesGroup({
+        title: 'Window Transparency',
+        description: 'Make unfocused windows slightly translucent. The focused window always stays fully opaque, so the window you are actively working in \u2014 a graphics editor, say \u2014 is never affected.'
+    });
+    page.add(transGroup);
+
+    const transRow = new Adw.SwitchRow({
+        title: 'Unfocused Transparency',
+        subtitle: 'Dim windows in the background'
+    });
+    settings.bind('transparency-enabled', transRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+    transGroup.add(transRow);
+
+    const opacityRow = new Adw.SpinRow({
+        title: 'Unfocused Opacity',
+        subtitle: 'Percent \u2014 100 is fully opaque',
+        adjustment: new Gtk.Adjustment({
+            lower: 50,
+            upper: 100,
+            step_increment: 1
+        }),
+        value: settings.get_int('transparency-opacity')
+    });
+    settings.bind('transparency-opacity', opacityRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+    settings.bind('transparency-enabled', opacityRow, 'sensitive', Gio.SettingsBindFlags.GET);
+    transGroup.add(opacityRow);
+
     // Honest limitation, stated in the UI so nobody hunts for a hidden toggle
     const noteGroup = new Adw.PreferencesGroup();
     page.add(noteGroup);

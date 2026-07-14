@@ -3,6 +3,53 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.14.5 (version 20)
+
+### Window Transparency
+- Hardened the focused-window guarantee: if focus changed while a geometry
+  fade animation was in flight on a window, the fade could restore a stale
+  opacity and the correction was skipped. Transparency updates now retry
+  once after an in-flight fade completes, and pending retries are cleaned
+  up on detach.
+
+## 26.07.14.4 (version 19)
+
+### Build tooling
+- `build.py --ego` builds an extensions.gnome.org submission package:
+  excludes all development tooling (build/install/dev scripts, ui mockups,
+  notes, the standalone app.js runner), strips nonstandard keys from
+  metadata.json inside the zip (debug, links, license_type, prefs-page,
+  developer-name \u2014 the runtime falls back safely, so debug is
+  automatically off in EGO builds), and names the file
+  `<uuid>.shell-extension.zip` per the `gnome-extensions pack` convention.
+
+### Window Transparency (new, on the Corners page)
+- Opt-in unfocused-window transparency (`transparency-enabled`, default
+  off; `transparency-opacity`, default 92%). The focused window always
+  stays fully opaque, so the window being actively worked in \u2014 a
+  graphics editor during visual inspection \u2014 is never dimmed; only
+  background windows are. Works independently of Uniform Rounded Corners
+  (transparency alone attaches no GPU effect or shadow machinery), defers
+  to in-flight geometry fade animations, and restores full opacity on
+  detach/disable.
+
+## 26.07.14.3 (version 18)
+
+### Schema migration (BREAKING for existing settings)
+- GSettings schema id renamed from `dev.lethil.lesion` to
+  `org.gnome.shell.extensions.lethil` (EGO publication requirement; also
+  the ecosystem convention). Updated everywhere: the schema XML filename,
+  schema id, all enum ids, the dconf path (now
+  `/org/gnome/shell/extensions/lethil/`), gettext-domain, metadata.json
+  `settings-schema`, and the AppConfig fallbacks.
+- Existing settings live under the old dconf path and are NOT migrated
+  automatically. To carry them over once:
+  `dconf dump /dev/lethil/lesion/ | dconf load /org/gnome/shell/extensions/lethil/`
+  Afterwards the old tree can be removed with
+  `dconf reset -f /dev/lethil/lesion/`, and any globally installed old
+  schema in `~/.local/share/glib-2.0/schemas/` can be deleted and
+  recompiled.
+
 ## 26.07.14.2 (version 17)
 
 ### Compatibility
