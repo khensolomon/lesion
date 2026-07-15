@@ -33,12 +33,14 @@ import { isMaximized } from '../util/compat.js';
  *      property bindings) so it tracks moves, resizes, and animations.
  */
 
-const SHADOW_PADDING = 80; // px of room around the frame for the CSS shadow
+const SHADOW_PADDING = 80;   // px of room around the frame for the CSS shadow
+const EDGE_SNAP_PX = 2;      // window edge within this of the work area = flush
 
 const DECLARATIONS = `
 uniform vec4 bounds;      // frame rect inside the buffer: x1, y1, x2, y2
 uniform float clip_radius;
 uniform vec2 tex_size;    // size of the actor the effect is attached to
+uniform vec4 corner_mask; // 1.0 = round, 0.0 = square: TL, TR, BL, BR
 `;
 
 // Masking (RWC math): everything outside the frame is removed (that's the
@@ -57,6 +59,12 @@ if (clip_radius > 0.5) {
         bool corner_x = pos.x < fmin.x || pos.x > fmax.x;
         bool corner_y = pos.y < fmin.y || pos.y > fmax.y;
         if (corner_x && corner_y) {
+            // Per-corner gate: corners flush against a screen edge stay
+            // square (mask 0), like tiled windows.
+            float m = pos.y < fmin.y
+                ? (pos.x < fmin.x ? corner_mask.x : corner_mask.y)
+                : (pos.x < fmin.x ? corner_mask.z : corner_mask.w);
+            if (m > 0.5) {
             vec2 center = clamp(pos, fmin, fmax);
             vec2 delta = pos - center;
             float distSq = dot(delta, delta);
@@ -68,6 +76,7 @@ if (clip_radius > 0.5) {
             else if (distSq > inner * inner)
                 f = outer - sqrt(distSq);
             cogl_color_out = cogl_color_out * f;
+            }
         }
     }
 }
@@ -80,7 +89,7 @@ const RoundedCornersEffect = GObject.registerClass({
         this.add_glsl_snippet(Shell.SnippetHook.FRAGMENT, DECLARATIONS, CODE, false);
     }
 
-    update(frameX, frameY, frameW, frameH, texW, texH, radius) {
+    update(frameX, frameY, frameW, frameH, texW, texH, radius, mask = [1, 1, 1, 1]) {
         try {
             // RWC insets the top-left by 1px so the shadow actor's body can
             // never peek out along that edge.
@@ -88,6 +97,7 @@ const RoundedCornersEffect = GObject.registerClass({
                 [frameX + 1, frameY + 1, frameX + frameW, frameY + frameH]);
             this.set_uniform_float(this.get_uniform_location('clip_radius'), 1, [radius]);
             this.set_uniform_float(this.get_uniform_location('tex_size'), 2, [texW, texH]);
+            this.set_uniform_float(this.get_uniform_location('corner_mask'), 4, mask);
             this.queue_repaint();
         } catch (e) {
             logError('[Corners] uniform update failed', e);
@@ -126,12 +136,33 @@ export class CornersManager extends ExtensionComponent {
         });
         this._signals.push({ obj: global.display, id });
 
+        // RESTACKING: Mutter reorders window actors on focus/raise, but our
+        // shadow actors keep their old depth — a stale shadow can end up
+        // ABOVE a newly raised window, painting a dark rim over its edges
+        // that reads as the window being translucent. Re-sync every shadow
+        // to sit directly below its window whenever the stack changes
+        // (same approach as Rounded Window Corners Reborn).
+        const restackId = global.display.connect('restacked', () => {
+            for (const rec of this._windows.values()) {
+                try {
+                    if (rec.shadow && rec.actor &&
+                        rec.shadow.get_parent() === global.window_group &&
+                        rec.actor.get_parent() === global.window_group) {
+                        global.window_group.set_child_below_sibling(rec.shadow, rec.actor);
+                    }
+                } catch (e) {}
+            }
+        });
+        this._signals.push({ obj: global.display, id: restackId });
+
         this._syncAll();
 
         this.observe('changed::corners-enabled', () => this._rebuildAll());
         this.observe('changed::transparency-enabled', () => this._rebuildAll());
         this.observe('changed::corners-radius', () => this._syncAll());
+        this.observe('changed::corners-smart-edges', () => this._syncAll());
         this.observe('changed::transparency-opacity', () => this._syncAll());
+        this.observe('changed::transparency-focused-opacity', () => this._syncAll());
     }
 
     onDisable() {
@@ -230,6 +261,9 @@ export class CornersManager extends ExtensionComponent {
 
         const sigs = [];
         sigs.push(win.connect('size-changed', () => this._updateWindow(win)));
+        // Smart edges: MOVING a window onto/off a screen edge changes its
+        // corner mask without any size change.
+        sigs.push(win.connect('position-changed', () => this._updateWindow(win)));
         sigs.push(win.connect('notify::appears-focused', () => this._updateWindow(win)));
         sigs.push(win.connect('unmanaged', () => this._detachWindow(win)));
 
@@ -306,6 +340,8 @@ export class CornersManager extends ExtensionComponent {
                     radius = 0;
                 radius = Math.min(radius, Math.floor(Math.min(frame.width, frame.height) / 2));
 
+                const mask = this._computeCornerMask(win, frame);
+
                 const tw = rec.target?.get_width?.() || buffer.width;
                 const th = rec.target?.get_height?.() || buffer.height;
 
@@ -316,10 +352,11 @@ export class CornersManager extends ExtensionComponent {
                     frame.height,
                     tw,
                     th,
-                    radius
+                    radius,
+                    mask
                 );
 
-                this._updateShadow(win, rec, frame, buffer, radius);
+                this._updateShadow(win, rec, frame, buffer, radius, mask);
             }
 
             this._updateTransparency(win, rec);
@@ -341,8 +378,11 @@ export class CornersManager extends ExtensionComponent {
         if (!actor) return;
 
         let op = 255;
-        if (this._transparencyEnabled() && !win.appears_focused) {
-            const pct = this.getSettings().get_int('transparency-opacity');
+        if (this._transparencyEnabled()) {
+            const key = win.appears_focused
+                ? 'transparency-focused-opacity'
+                : 'transparency-opacity';
+            const pct = this.getSettings().get_int(key);
             op = Math.round(255 * Math.min(100, Math.max(50, pct)) / 100);
         }
 
@@ -367,7 +407,39 @@ export class CornersManager extends ExtensionComponent {
         } catch (e) {}
     }
 
-    _updateShadow(win, rec, frame, buffer, radius) {
+    /**
+     * Smart edges: a corner flush against a screen (work area) edge stays
+     * square — a rounded corner at the very edge of the screen leaves an
+     * odd gap sliver, and tiled side-by-side windows should read as tiles.
+     * Any corner whose adjacent window edge sits within EDGE_SNAP_PX of the
+     * work area edge is squared; interior-facing corners stay rounded.
+     * Returns [TL, TR, BL, BR] with 1 = round, 0 = square.
+     */
+    _computeCornerMask(win, frame) {
+        if (!this.getSettings().get_boolean('corners-smart-edges'))
+            return [1, 1, 1, 1];
+
+        try {
+            const wa = win.get_work_area_current_monitor();
+            if (!wa || wa.width <= 0) return [1, 1, 1, 1];
+
+            const touchL = frame.x <= wa.x + EDGE_SNAP_PX;
+            const touchT = frame.y <= wa.y + EDGE_SNAP_PX;
+            const touchR = frame.x + frame.width >= wa.x + wa.width - EDGE_SNAP_PX;
+            const touchB = frame.y + frame.height >= wa.y + wa.height - EDGE_SNAP_PX;
+
+            return [
+                (touchL || touchT) ? 0 : 1, // TL
+                (touchR || touchT) ? 0 : 1, // TR
+                (touchL || touchB) ? 0 : 1, // BL
+                (touchR || touchB) ? 0 : 1, // BR
+            ];
+        } catch (e) {
+            return [1, 1, 1, 1];
+        }
+    }
+
+    _updateShadow(win, rec, frame, buffer, radius, mask = [1, 1, 1, 1]) {
         if (!rec.shadow) return;
 
         // Outer bin covers frame + SHADOW_PADDING on all sides; the actor
@@ -397,7 +469,11 @@ export class CornersManager extends ExtensionComponent {
             const shadowCss = win.appears_focused
                 ? 'box-shadow: 0 4px 20px 5px rgba(0,0,0,0.32);'
                 : 'box-shadow: 0 2px 10px 2px rgba(0,0,0,0.18);';
-            style = `background: white; border-radius: ${radius}px; ${shadowCss}`;
+            // Match the shadow body to the per-corner rounding so a squared
+            // window corner doesn't sit on a rounded shadow.
+            // CSS order: TL TR BR BL; our mask order: TL TR BL BR.
+            const r = (i) => `${mask[i] ? radius : 0}px`;
+            style = `background: white; border-radius: ${r(0)} ${r(1)} ${r(3)} ${r(2)}; ${shadowCss}`;
         }
         if (child.style !== style) {
             child.style = style;

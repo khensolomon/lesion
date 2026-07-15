@@ -39,6 +39,14 @@ export function createCornersUI() {
     settings.bind('corners-enabled', radiusRow, 'sensitive', Gio.SettingsBindFlags.GET);
     mainGroup.add(radiusRow);
 
+    const smartRow = new Adw.SwitchRow({
+        title: 'Square Corners at Screen Edges',
+        subtitle: 'Corners flush against a screen edge stay square, like tiled windows; corners facing the desktop stay rounded'
+    });
+    settings.bind('corners-smart-edges', smartRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+    settings.bind('corners-enabled', smartRow, 'sensitive', Gio.SettingsBindFlags.GET);
+    mainGroup.add(smartRow);
+
     // --- Window Transparency ---
     const transGroup = new Adw.PreferencesGroup({
         title: 'Window Transparency',
@@ -52,6 +60,20 @@ export function createCornersUI() {
     });
     settings.bind('transparency-enabled', transRow, 'active', Gio.SettingsBindFlags.DEFAULT);
     transGroup.add(transRow);
+
+    const focusedRow = new Adw.SpinRow({
+        title: 'Focused Opacity',
+        subtitle: 'Percent \u2014 keep at 100 for graphics work; the active window is never dimmed by default',
+        adjustment: new Gtk.Adjustment({
+            lower: 50,
+            upper: 100,
+            step_increment: 1
+        }),
+        value: settings.get_int('transparency-focused-opacity')
+    });
+    settings.bind('transparency-focused-opacity', focusedRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+    settings.bind('transparency-enabled', focusedRow, 'sensitive', Gio.SettingsBindFlags.GET);
+    transGroup.add(focusedRow);
 
     const opacityRow = new Adw.SpinRow({
         title: 'Unfocused Opacity',

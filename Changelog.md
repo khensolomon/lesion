@@ -3,6 +3,51 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.14.8 (version 23)
+
+### Preferences UI
+- `page/home.js` renamed to `page/dashboard.js` (page id `home` ->
+  `dashboard`); the Dashboard is now a pure action hub: indicator settings,
+  quick navigation, and data management.
+- The hero row (name, version, session, UUID copy) moved off the Dashboard:
+  identity content already lived on the About page, and the two useful
+  diagnostics — session type and the UUID copy button — now join it there
+  in a new System group.
+- Window Corners added to the Dashboard's quick-access module list.
+
+### Metadata
+- Rewrote the metadata.json description from the placeholder ("Demo
+  extension with personalized settings") to an informative summary of the
+  panel styling and presets, clock, app buttons, window geometry, rounded
+  corners, transparency, custom CSS, and wallpaper features.
+
+## 26.07.14.7 (version 22)
+
+### Window Corners / Transparency
+- Fixed the "focused window looks transparent" bug: it was not opacity at
+  all. Mutter restacks window actors on focus/raise, but the replacement
+  shadow actors kept their old depth, so a stale shadow could sit ABOVE a
+  newly raised window and paint a dark rim over its edges — reading as
+  translucency. Shadows now re-sort directly below their windows on every
+  `restacked` signal (same approach as Rounded Window Corners Reborn).
+- New Focused Opacity setting (`transparency-focused-opacity`, default
+  100): the focused window can now optionally be made translucent too,
+  with its own percentage, while the default keeps it fully opaque.
+
+## 26.07.14.6 (version 21)
+
+### Window Corners: smart screen edges
+- Corners flush against a screen (work area) edge now stay square while
+  interior-facing corners remain rounded (`corners-smart-edges`, default
+  on). Side-by-side windows at the screen edges read as tiles: square
+  outer corners, rounded inner ones. Implemented as a per-corner mask
+  uniform in the shader (TL/TR/BL/BR), an edge-flush test against the
+  window's work area (within 2px, where GNOME snap places windows), and
+  matching per-corner radii on the replacement shadow body so a squared
+  window corner never sits on a rounded shadow.
+- Windows now also refresh on position changes, since moving a window
+  onto or off a screen edge changes its corner mask without any resize.
+
 ## 26.07.14.5 (version 20)
 
 ### Window Transparency

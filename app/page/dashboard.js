@@ -2,13 +2,12 @@ import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import Gdk from 'gi://Gdk';
 import GObject from 'gi://GObject';
 
 import { AppConfig } from '../config.js';
 import { SettingsManager } from '../util/io.js';
 
-export class HomePage extends Adw.PreferencesPage {
+export class DashboardPage extends Adw.PreferencesPage {
     static {
         GObject.registerClass(this);
     }
@@ -27,38 +26,10 @@ export class HomePage extends Adw.PreferencesPage {
     }
 
     _buildUI() {
-        // --- 1. HERO / SYSTEM STATUS ---
-        const statusGroup = new Adw.PreferencesGroup();
-        this.add(statusGroup);
+        // Identity/hero content lives on the About page; the dashboard is a
+        // pure action hub (indicator, quick navigation, data management).
 
-        const sessionType = GLib.getenv('XDG_SESSION_TYPE') || 'Unknown';
-        
-        const heroRow = new Adw.ActionRow({
-            title: AppConfig.name,
-            subtitle: `v${AppConfig.metadata.version} • ${sessionType.toUpperCase()} Session`,
-        });
-        
-        const heroIcon = new Gtk.Image({
-            icon_name: 'application-x-executable-symbolic', 
-            pixel_size: 32,
-            css_classes: ['accent']
-        });
-        heroRow.add_prefix(heroIcon);
-
-        const copyBtn = new Gtk.Button({
-            icon_name: 'edit-copy-symbolic',
-            valign: Gtk.Align.CENTER,
-            css_classes: ['flat', 'circular'],
-            tooltip_text: `Copy UUID: ${AppConfig.uuid}`
-        });
-        copyBtn.connect('clicked', () => {
-            const clipboard = Gdk.Display.get_default().get_clipboard();
-            clipboard.set(AppConfig.uuid);
-        });
-        heroRow.add_suffix(copyBtn);
-        statusGroup.add(heroRow);
-
-        // --- 2. GLOBAL INDICATOR SETTINGS ---
+        // --- 1. GLOBAL INDICATOR SETTINGS ---
         const indicatorGroup = new Adw.PreferencesGroup({
             title: 'Panel Indicator',
             description: 'Control the main menu icon in the top bar'
@@ -86,6 +57,7 @@ export class HomePage extends Adw.PreferencesPage {
         navGroup.add(this._createNavRow('Wallpaper Engine', 'Manage dual-mode backgrounds', 'preferences-desktop-wallpaper-symbolic', 'wallpaper'));
         navGroup.add(this._createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-appearance-symbolic', 'css'));
         navGroup.add(this._createNavRow('Apps', 'Customize the app grid button', 'applications-development-symbolic', 'apps'));
+        navGroup.add(this._createNavRow('Window Corners', 'Rounding, shadows, and transparency', 'preferences-desktop-theme-symbolic', 'window-corners'));
 
         // --- 4. DATA MANAGEMENT ---
         const dataGroup = new Adw.PreferencesGroup({
@@ -363,7 +335,6 @@ export class HomePage extends Adw.PreferencesPage {
     }
 }
 
-// Backward compatibility wrapper
-export function createHomeUI(navigator, goToPage) {
-    return new HomePage(navigator, goToPage);
+export function createDashboardUI(navigator, goToPage) {
+    return new DashboardPage(navigator, goToPage);
 }

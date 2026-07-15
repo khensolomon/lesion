@@ -152,7 +152,9 @@
     <key name="corners-enabled" type="b"><default>false</default></key>
     <key name="transparency-enabled" type="b"><default>false</default></key>
     <key name="transparency-opacity" type="i"><default>92</default></key>
+    <key name="transparency-focused-opacity" type="i"><default>100</default></key>
     <key name="corners-radius" type="i"><default>12</default></key>
+    <key name="corners-smart-edges" type="b"><default>true</default></key>
     <key name="geometry-enabled" type="b">
       <default>false</default>
       <summary>Save and restore window geometry</summary>

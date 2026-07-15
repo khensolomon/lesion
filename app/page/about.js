@@ -1,6 +1,7 @@
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import GLib from 'gi://GLib';
+import Gdk from 'gi://Gdk';
 import { AppConfig } from '../config.js'; 
 
 export function createAboutUI(navigator, goToPage) {
@@ -42,6 +43,37 @@ export function createAboutUI(navigator, goToPage) {
     const headerGroup = new Adw.PreferencesGroup();
     headerGroup.add(headerBox);
     page.add(headerGroup);
+
+    // --- SYSTEM / DIAGNOSTICS (moved here from the old dashboard hero) ---
+    const sysGroup = new Adw.PreferencesGroup({
+        title: 'System',
+    });
+
+    const sessionType = GLib.getenv('XDG_SESSION_TYPE') || 'Unknown';
+    sysGroup.add(new Adw.ActionRow({
+        title: 'Session',
+        subtitle: sessionType.toUpperCase(),
+        activatable: false,
+    }));
+
+    const uuidRow = new Adw.ActionRow({
+        title: 'Extension UUID',
+        subtitle: AppConfig.uuid,
+    });
+    const copyBtn = new Gtk.Button({
+        icon_name: 'edit-copy-symbolic',
+        valign: Gtk.Align.CENTER,
+        css_classes: ['flat', 'circular'],
+        tooltip_text: 'Copy UUID',
+    });
+    copyBtn.connect('clicked', () => {
+        try {
+            Gdk.Display.get_default().get_clipboard().set(AppConfig.uuid);
+        } catch (e) {}
+    });
+    uuidRow.add_suffix(copyBtn);
+    sysGroup.add(uuidRow);
+    page.add(sysGroup);
 
     // --- 2. DOCUMENTATION SECTION ---
     // Check if links exist in the metadata loaded by AppConfig

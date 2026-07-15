@@ -1,4 +1,4 @@
-import { createHomeUI } from "./home.js";
+import { createDashboardUI } from "./dashboard.js";
 import { createAboutUI } from "./about.js";
 import { createCssUI } from "./css.js";
 import { createWallpaperUI } from "./wallpaper.js";
@@ -19,12 +19,12 @@ export function getPages() {
       title: "General",
       items: [
         {
-          id: "home",
+          id: "dashboard",
           title: "Dashboard",
           icon: "user-home-symbolic", //"preferences-system-symbolic",
           description: "View system information and basic OS details",
-          keywords: ["dashboard", "information", "version", "home", "name"],
-          ui: createHomeUI,
+          keywords: ["dashboard", "home", "indicator", "backup", "restore"],
+          ui: createDashboardUI,
         },
         {
           id: "about",
