@@ -5,7 +5,7 @@ import { createWallpaperUI } from "./wallpaper.js";
 import { createGeometryUI } from './geometry.js';
 import { createClockUI } from './clock.js';
 import { createAppsUI } from './apps.js';
-import { createPanelsUI } from "./panels.js";
+import { createStyleUI } from "./style.js";
 // import { createSettingUI } from "./setting.js";
 // import { createAppButtonUI } from './appbutton.js';
 import { createCornersUI } from './corners.js';
@@ -84,7 +84,7 @@ export function getPages() {
         {
           id: "window-corners",
           title: "Corners",
-          icon: "preferences-desktop-theme-symbolic",
+          icon: "preferences-desktop-appearance-symbolic",
           description: "Uniform rounded corners for application windows",
           keywords: ["corners", "round", "radius", "windows", "square"],
           ui: createCornersUI,
@@ -127,7 +127,7 @@ export function getPages() {
         {
             id: 'apps',
             title: 'Apps',
-            icon: 'applications-development-symbolic',
+            icon: 'view-grid-symbolic',
             keywords: ['applications', 'bar', 'apps', 'applets', 'menu', 'grid', 'overview', 'launcher'],
             ui: createAppsUI
         },
@@ -136,7 +136,7 @@ export function getPages() {
             title: 'Style',
             icon: 'preferences-desktop-keyboard-shortcuts-symbolic',
             keywords: ['panel', 'style', 'appearance', 'theme', 'color', 'transparency', 'gradient', 'background', 'border', 'shadow', 'bar'],
-            ui: createPanelsUI
+            ui: createStyleUI
         },
         // {
         //     id: 'mimic',
@@ -158,7 +158,7 @@ export function getPages() {
         //           ui: () =>
         //             new Adw.StatusPage({
         //               title: "Logs",
-        //               icon_name: "text-x-script-symbolic",
+        //               icon_name: "text-x-generic-symbolic",
         //             }),
         //         },
         //       ],

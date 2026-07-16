@@ -8,7 +8,7 @@ import { AppConfig } from '../config.js';
 import { PanelsPresets } from '../data/panels.js';
 import { log, logError } from '../util/logger.js';
 
-export class PanelsPage extends Adw.PreferencesPage {
+export class StylePage extends Adw.PreferencesPage {
     static {
         GObject.registerClass(this);
     }
@@ -35,8 +35,8 @@ export class PanelsPage extends Adw.PreferencesPage {
 
         // Reset Button
         const resetRow = new Adw.ActionRow({
-            title: 'Reset Configuration',
-            subtitle: 'Restore all panel settings to their default values.'
+            title: 'Reset Style',
+            subtitle: 'Restore panel, popup, and button styling to defaults. Other settings are untouched'
         });
         const resetBtn = new Gtk.Button({
             icon_name: 'edit-undo-symbolic',
@@ -44,7 +44,7 @@ export class PanelsPage extends Adw.PreferencesPage {
             tooltip_text: 'Reset to Defaults'
         });
         resetBtn.add_css_class('flat');
-        resetBtn.connect('clicked', () => this._resetAllSettings());
+        resetBtn.connect('clicked', () => this._resetStyleSettings());
         resetRow.add_suffix(resetBtn);
         generalGroup.add(resetRow);
 
@@ -293,7 +293,10 @@ export class PanelsPage extends Adw.PreferencesPage {
     }
 
     // --- Reset Logic ---
-    _resetAllSettings() {
+    /** Resets ONLY the styling keys handled by this page (panel, popup,
+     *  button styling, and the apps toggles the presets touch). A full
+     *  reset of every setting lives on Dashboard -> Data Management. */
+    _resetStyleSettings() {
         // Use delay/apply here too for consistency
         this._settings.delay();
         
@@ -521,6 +524,6 @@ export class PanelsPage extends Adw.PreferencesPage {
 }
 
 // Backward compatibility wrapper
-export function createPanelsUI(navigator, goToPage) {
-    return new PanelsPage();
+export function createStyleUI(navigator, goToPage) {
+    return new StylePage();
 }

@@ -50,6 +50,9 @@ const ANIMATE_AFTER_MS = 250;     // Window visible longer than this -> fade-mov
 const FADE_OUT_MS = 90;           // Fade-out before an already-visible window is moved
 const FADE_IN_MS = 140;           // Fade-in at the destination
 const MOVE_MIN_DELTA = 8;         // Don't animate sub-8px corrections
+const CLOAK_OFFSET = -100000;     // Off-screen translation while placing
+const CLOAK_MAX_MS = 350;         // Reveal deadline if identity never resolves
+const REVEAL_FADE_MS = 120;       // Soften late reveals (after map anim ended)
 
 export class GeometryManager extends ExtensionComponent {
 
@@ -61,8 +64,23 @@ export class GeometryManager extends ExtensionComponent {
 
         log("[Geometry] enabling manager");
 
+        this._lastWrittenJson = null;
         this._loadCache();
         this._pruneCache();
+
+        // CRITICAL: the preferences window edits 'geometry-data' directly
+        // (Forget This Window / Clear All). Without reloading here, the
+        // stale in-memory cache kept restoring forgotten entries AND wrote
+        // them all back to disk on the next window move — resurrecting the
+        // list the user had just cleared. Own writes are recognized via
+        // _lastWrittenJson and ignored.
+        this.observe('changed::geometry-data', () => {
+            let json = null;
+            try { json = this.getSettings().get_string('geometry-data'); } catch (e) {}
+            if (json === null || json === this._lastWrittenJson) return;
+            log('[Geometry] Store edited externally — reloading');
+            this._loadCache();
+        });
 
         const display = global.display;
         const id = display.connect('window-created', (d, win) => {
@@ -70,6 +88,24 @@ export class GeometryManager extends ExtensionComponent {
             this._trackWindow(win, true);
         });
         this._signals.push({ obj: display, id });
+
+        // USER INTENT IS AUTHORITATIVE: finishing a drag/resize settles the
+        // window immediately. Previously a new window stayed "unsettled"
+        // for up to ~3s (identity polling + grace), silently discarding the
+        // user's first moves; and a fast drag could close before the save
+        // debounce captured the final rect.
+        const grabId = display.connect('grab-op-end', (d, win) => {
+            const data = win ? this._windowData.get(win) : null;
+            if (!data) return;
+            if (data.timerId) {
+                GLib.source_remove(data.timerId);
+                data.timerId = 0;
+            }
+            data.settled = true;
+            this._reveal(win, data); // safety: a grabbed window must be visible
+            this._onWindowChanged(win);
+        });
+        this._signals.push({ obj: display, id: grabId });
 
         // Existing windows: track only — see design rule 1.
         global.display.list_all_windows().forEach(win => this._trackWindow(win, false));
@@ -121,6 +157,10 @@ export class GeometryManager extends ExtensionComponent {
             restored: false,
             wmClassSignalId: 0,
             timerId: 0,
+            firstId: null,
+            cloaked: false,
+            cloakTimerId: 0,
+            shownSeen: false,
             createdAt: GLib.get_monotonic_time(),
         };
         this._windowData.set(win, data);
@@ -129,20 +169,79 @@ export class GeometryManager extends ExtensionComponent {
         data.signals.push(win.connect('size-changed', () => this._onWindowChanged(win)));
         data.signals.push(win.connect('position-changed', () => this._onWindowChanged(win)));
 
-        if (isNew)
-            this._scheduleRestore(win, data, 0);
+        if (isNew) {
+            // Second early trigger: the actor's first painted frame — some
+            // identities land between window-created and first paint.
+            try {
+                const actor = win.get_compositor_private();
+                if (actor) {
+                    const ffId = actor.connect('first-frame', () => {
+                        try { actor.disconnect(ffId); } catch (e) {}
+                        this._tryResolveRestore(win, data);
+                    });
+                }
+            } catch (e) {}
+
+            // THE PLACEMENT OVERRIDE (found via journal analysis: every
+            // restore was followed by "moved itself; reapplying" — a 100%
+            // rate): Mutter runs its own placement when the window is first
+            // SHOWN, discarding any geometry applied before that. Early
+            // application is therefore kept only as a hint; the
+            // authoritative apply happens in the one-shot 'shown' handler
+            // below, after placement has run, while the cloak keeps the
+            // whole sequence invisible.
+            try {
+                const shownId = win.connect('shown', () => {
+                    try { win.disconnect(shownId); } catch (e) {}
+                    data.shownSeen = true;
+                    if (!this._windowData.has(win)) return;
+                    if (data.restored) {
+                        // Re-lookup: the title may have arrived by now,
+                        // selecting a better per-title slot.
+                        let appId = null;
+                        try { appId = win.get_wm_class(); } catch (e) {}
+                        const effective = (appId && this._geometryCache[appId])
+                            ? appId : data.restoredAs;
+                        const geo = this._lookupGeometry(win, effective);
+                        if (geo) this._applyGeometry(win, effective, geo, data);
+                    }
+                    this._reveal(win, data);
+                });
+            } catch (e) {}
+
+            const resolved = this._tryResolveRestore(win, data);
+            let idNow = null;
+            try { idNow = win.get_wm_class(); } catch (e) {}
+
+            // Cloak when something will happen off-view: either a restore
+            // already resolved (it must be re-applied post-placement) or the
+            // identity is still unknown (a restore may yet resolve). Known
+            // identity with nothing saved maps naturally, uncloaked.
+            if (resolved || !idNow)
+                this._cloak(win, data);
+
+            if (!resolved)
+                this._scheduleRestore(win, data, 0);
+        }
     }
 
     _untrackWindow(win) {
         const data = this._windowData.get(win);
         if (!data) return;
 
+        if (data.cloakTimerId) {
+            GLib.source_remove(data.cloakTimerId);
+            data.cloakTimerId = 0;
+        }
+
         try {
             const actor = win.get_compositor_private();
             if (actor) {
-                // A disable mid-fade must not leave the window translucent
+                // A disable mid-fade/mid-cloak must not leave the window
+                // translucent or off-screen
                 actor.remove_transition('opacity');
                 if (actor.opacity < 255) actor.opacity = 255;
+                if (actor.translation_x !== 0) actor.translation_x = 0;
             }
         } catch (e) {}
 
@@ -169,28 +268,66 @@ export class GeometryManager extends ExtensionComponent {
      * after a grace period so saving can begin.
      */
     /**
-     * Waits for the window's FINAL app identity before restoring.
+     * Identity resolution with ALIAS LEARNING.
      *
-     * Crucial detail: get_wm_class() being non-null is NOT enough. Several
-     * apps establish or CHANGE their identity after the window exists —
-     * Firefox maps as 'firefox' and later becomes 'firefox_firefox', Chrome
-     * mutates similarly, and GTK4 single-instance apps (Nautilus, Text
-     * Editor, Settings, Boxes) settle their app-id late. Saves always run
-     * later, under the final identity — so looking up the cache with the
-     * EARLY identity finds nothing and restore silently never happened for
-     * exactly those apps. We therefore keep polling until the identity
-     * matches a saved entry (or attempts run out), and also react to
-     * 'notify::wm-class' in case the change lands between polls.
+     * Several apps establish their final identity late (Firefox maps as
+     * 'firefox' then becomes 'firefox_firefox'; Chrome and GTK4
+     * single-instance apps behave similarly), which used to force waiting —
+     * the window was already visible before restore could run, producing
+     * the appear-then-move animation. The latency is learnable: whenever an
+     * identity CHANGE is observed, the early->final mapping is persisted in
+     * the cache under '__aliases__'. From the next launch on, the early
+     * identity resolves through the alias IMMEDIATELY at window creation,
+     * so the window is placed and sized before its first frame paints — no
+     * animation at all.
      */
+    _tryResolveRestore(win, data) {
+        if (data.restored || !this._windowData.has(win)) return false;
+
+        let appId = null;
+        try { appId = win.get_wm_class(); } catch (e) {}
+        if (!appId) return false;
+
+        if (!data.firstId) {
+            data.firstId = appId;
+        } else if (appId !== data.firstId) {
+            this._learnAlias(data.firstId, appId);
+        }
+
+        let effective = appId;
+        if (!this._geometryCache[effective]) {
+            const aliases = this._geometryCache['__aliases__'];
+            const target = aliases?.[appId];
+            if (target && this._geometryCache[target]) {
+                log(`[Geometry] Alias hit: '${appId}' -> '${target}'`);
+                effective = target;
+            }
+        }
+
+        if (this._geometryCache[effective]) {
+            this._beginRestore(win, data, effective);
+            return true;
+        }
+        return false;
+    }
+
+    _learnAlias(earlyId, finalId) {
+        if (!earlyId || !finalId || earlyId.startsWith('__')) return;
+        const aliases = this._geometryCache['__aliases__'] ??
+            (this._geometryCache['__aliases__'] = {});
+        if (aliases[earlyId] !== finalId) {
+            aliases[earlyId] = finalId;
+            log(`[Geometry] Learned identity alias '${earlyId}' -> '${finalId}'`);
+            this._queueSave();
+        }
+    }
+
     _scheduleRestore(win, data, attempt) {
         // React immediately if the identity changes mid-wait
         if (attempt === 0 && !data.wmClassSignalId) {
             try {
                 data.wmClassSignalId = win.connect('notify::wm-class', () => {
-                    if (data.restored || !this._windowData.has(win)) return;
-                    const id = win.get_wm_class();
-                    if (id && this._geometryCache[id])
-                        this._beginRestore(win, data, id);
+                    this._tryResolveRestore(win, data);
                 });
                 data.signals.push(data.wmClassSignalId);
             } catch (e) {}
@@ -201,20 +338,24 @@ export class GeometryManager extends ExtensionComponent {
                 data.timerId = 0;
                 if (!this._windowData.has(win) || data.restored) return GLib.SOURCE_REMOVE;
 
-                let appId = null;
-                try { appId = win.get_wm_class(); } catch (e) {}
+                if (this._tryResolveRestore(win, data)) return GLib.SOURCE_REMOVE;
 
-                const geo = appId ? this._geometryCache[appId] : null;
+                // Identity known but nothing saved (and no alias): no
+                // restore is coming — stop hiding the window.
+                if (data.cloaked) {
+                    let idNow = null;
+                    try { idNow = win.get_wm_class(); } catch (e) {}
+                    if (idNow && !this._geometryCache['__aliases__']?.[idNow])
+                        this._reveal(win, data);
+                }
 
-                if (geo) {
-                    this._beginRestore(win, data, appId);
-                } else if (attempt < WM_CLASS_MAX_TRIES) {
-                    // Either no identity yet, or an identity with no saved
-                    // entry — which may still be the EARLY identity of an
-                    // app whose final one we know. Keep waiting.
+                if (attempt < WM_CLASS_MAX_TRIES) {
                     this._scheduleRestore(win, data, attempt + 1);
                 } else {
+                    let appId = null;
+                    try { appId = win.get_wm_class(); } catch (e) {}
                     log(`[Geometry] No saved entry for '${appId ?? 'unknown'}' — tracking only`);
+                    this._reveal(win, data);
                     this._settleLater(win, data);
                 }
                 return GLib.SOURCE_REMOVE;
@@ -239,8 +380,14 @@ export class GeometryManager extends ExtensionComponent {
             GLib.source_remove(data.timerId);
             data.timerId = 0;
         }
+        data.restoredAs = appId;
         const geo = this._lookupGeometry(win, appId);
         this._applyGeometry(win, appId, geo, data);
+        if (data.shownSeen) {
+            // Placement already ran — this apply is authoritative
+            this._reveal(win, data);
+        }
+        // else: the 'shown' handler reapplies post-placement and reveals
         this._verifyRestore(win, data, appId, 0);
     }
 
@@ -357,6 +504,64 @@ export class GeometryManager extends ExtensionComponent {
     }
 
     /**
+     * CLOAK: the reason restores used to be visible as a "fly" is that
+     * GNOME's map animation shows the window from its very first frame,
+     * while app identities often resolve 50-250ms later — so the
+     * relocation happened in plain sight. macOS/Windows never show this
+     * because the window isn't displayed until it's placed. Same here:
+     * windows whose identity is unknown at creation are slid off-screen
+     * via actor translation (a property the map animation never touches,
+     * unlike opacity/scale), placed while off-view, and revealed AT the
+     * restored geometry. The corners shadow is translation-bound to its
+     * window, so it cloaks and reveals in sync automatically.
+     */
+    _cloak(win, data) {
+        try {
+            const actor = win.get_compositor_private();
+            if (!actor) return;
+            actor.translation_x = CLOAK_OFFSET;
+            data.cloaked = true;
+
+            data.cloakTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, CLOAK_MAX_MS, () => {
+                data.cloakTimerId = 0;
+                // Identity never resolved in time — show the window where
+                // it spawned; if a restore lands later it uses the fade.
+                this._reveal(win, data);
+                return GLib.SOURCE_REMOVE;
+            });
+        } catch (e) {}
+    }
+
+    _reveal(win, data) {
+        if (!data.cloaked) return;
+        data.cloaked = false;
+
+        if (data.cloakTimerId) {
+            GLib.source_remove(data.cloakTimerId);
+            data.cloakTimerId = 0;
+        }
+
+        try {
+            const actor = win.get_compositor_private();
+            if (!actor) return;
+            actor.translation_x = 0;
+
+            // If the shell's map animation is already over, an abrupt pop
+            // is jarring — soften with a short fade (opacity is
+            // uncontested once the map effect has finished).
+            const elapsed = (GLib.get_monotonic_time() - data.createdAt) / 1000;
+            if (elapsed > 300 && !actor.get_transition('opacity')) {
+                actor.opacity = 0;
+                actor.ease({
+                    opacity: 255,
+                    duration: REVEAL_FADE_MS,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+            }
+        } catch (e) {}
+    }
+
+    /**
      * Moves an already-visible window without visible travel: fade the
      * actor out, apply the move while invisible, fade back in at the
      * destination. The previous slide animation visibly departed from the
@@ -457,7 +662,7 @@ export class GeometryManager extends ExtensionComponent {
         if (win.is_fullscreen()) return;
 
         const appId = win.get_wm_class();
-        if (!appId) return;
+        if (!appId || appId.startsWith('__')) return;
 
         // Dialogs/transients must never write into the app slot, even if
         // they were mis-typed as NORMAL at creation time.
@@ -515,6 +720,8 @@ export class GeometryManager extends ExtensionComponent {
         this._saveTimeoutId = null;
         try {
             const json = JSON.stringify(this._geometryCache);
+            this._lastWrittenJson = json; // so the changed:: observer can
+                                          // tell our writes from external ones
             this.getSettings().set_string('geometry-data', json);
             log("[Geometry] Saved state to disk.");
         } catch (e) {
@@ -542,7 +749,9 @@ export class GeometryManager extends ExtensionComponent {
         try {
             const now = Date.now();
             const maxAge = PRUNE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+            const aliases = this._geometryCache['__aliases__'];
             let entries = Object.entries(this._geometryCache)
+                .filter(([key]) => !key.startsWith('__'))
                 .filter(([, geo]) => !geo.last_seen || (now - geo.last_seen) < maxAge);
 
             if (entries.length > PRUNE_MAX_ENTRIES) {
@@ -551,7 +760,9 @@ export class GeometryManager extends ExtensionComponent {
             }
 
             const pruned = Object.fromEntries(entries);
-            const removed = Object.keys(this._geometryCache).length - entries.length;
+            if (aliases) pruned['__aliases__'] = aliases;
+            const removed = Object.keys(this._geometryCache).length -
+                Object.keys(pruned).length;
             if (removed > 0) {
                 this._geometryCache = pruned;
                 this._saveToDisk();

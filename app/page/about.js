@@ -30,7 +30,10 @@ export function createAboutUI(navigator, goToPage) {
 
     // Metadata Labels
     const appName = new Gtk.Label({ label: metadata.name, css_classes: ['title-1'], margin_bottom: 0, wrap: true, justify: Gtk.Justification.CENTER });
-    const version = new Gtk.Label({ label: `v${metadata.version}`, css_classes: ['title-4', 'dim-label'], margin_bottom: 12 });
+    const versionLabel = metadata['version-name']
+        ? `${metadata['version-name']} (${metadata.version})`
+        : `v${metadata.version}`;
+    const version = new Gtk.Label({ label: versionLabel, css_classes: ['title-4', 'dim-label'], margin_bottom: 12 });
     const developer = new Gtk.Label({ label: metadata["developer-name"] || 'Unknown Developer', css_classes: ['heading'] });
     const description = new Gtk.Label({ label: metadata.description || '', justify: Gtk.Justification.CENTER, wrap: true, css_classes: ['body'], margin_top: 6, max_width_chars: 40 });
 
@@ -85,7 +88,7 @@ export function createAboutUI(navigator, goToPage) {
 
         const createLinkRow = (title, uri) => {
             const row = new Adw.ActionRow({ title: title, activatable: true });
-            row.add_suffix(new Gtk.Image({ icon_name: 'external-link-symbolic', css_classes: ['dim-label'] }));
+            row.add_suffix(new Gtk.Image({ icon_name: 'link-symbolic', css_classes: ['dim-label'] }));
             row.connect('activated', () => {
                 try {
                     const launcher = new Gtk.UriLauncher({ uri: uri });

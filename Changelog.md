@@ -3,6 +3,85 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.16 (version 27)
+
+### Window geometry: restore AFTER Mutter placement (journal-diagnosed)
+- Journal analysis showed every restore followed by "moved itself after
+  restore; reapplying" — a 100% rate, meaning systematic: Mutter runs its
+  own placement when a window is first SHOWN, discarding geometry applied
+  earlier. Being early was why restores lost. The authoritative apply now
+  happens in a one-shot 'shown' handler (post-placement), re-looking up the
+  per-title slot (titles often arrive by then), while the cloak keeps the
+  entire sequence off-view; the early apply remains as a hint only.
+  Windows are now cloaked whenever a restore resolved pre-shown OR the
+  identity is still pending; known apps with nothing saved map naturally.
+- User interaction is authoritative: 'grab-op-end' immediately settles a
+  window and saves its rect. Previously a new window stayed unsettled for
+  up to ~3 seconds (identity polling + grace), silently discarding the
+  user's first drags — and a fast drag could be lost to the save debounce.
+
+## 26.07.15.2 (version 26)
+
+### Window geometry: cloak-until-placed (the fly is dead)
+- Root cause finally identified: GNOME's map animation shows a window from
+  its very first frame, while app identities resolve 50-250ms later — so
+  every restore in that gap relocated a window that was already visible
+  and mid-zoom. The 250ms "too early to animate" threshold was built on a
+  false assumption; nothing after the first frame is invisible.
+- Windows whose identity is unknown at creation are now CLOAKED: the actor
+  is slid off-screen via translation (a property the map animation never
+  contests, unlike opacity/scale), placed while off-view, and revealed at
+  the restored geometry — the window's first visible moment IS its saved
+  position and size, exactly like the built-in behavior on other systems.
+  The corners shadow is translation-bound and cloaks in sync automatically.
+- Reveal triggers: restore applied; identity resolved with nothing saved
+  (no restore coming); 350ms deadline (identity never resolved — show at
+  spawn, any later restore uses the fade); and untrack/disable, which also
+  resets translation so no window can be left off-screen.
+- Reveals landing after the map animation has ended get a 120ms fade so
+  the appearance is soft rather than a pop.
+
+## 26.07.15 (version 25)
+
+### Window geometry: store desync fixed (the root of "still flying")
+- The shell-side manager read `geometry-data` once at enable and never
+  again, while the preferences window edits it directly. Consequences:
+  "Forget This Window" / "Clear All" only appeared to work (the stale
+  in-memory cache kept restoring forgotten entries), and any window move
+  wrote the whole stale cache back to disk, resurrecting the cleared list.
+  The manager now reloads whenever the store changes externally,
+  recognizing its own writes to avoid loops. This desync also poisoned the
+  identity-alias learning that makes restores instant, which is why
+  launches kept animating.
+- The first restore attempt now runs synchronously inside window-created
+  (instead of one main-loop iteration later), placing known apps before
+  the compositor paints their first frame.
+
+## 26.07.14.9 (version 24)
+
+### Window geometry: instant restores via identity aliases
+- The appear-then-move launch experience is eliminated for late-identity
+  apps from their second launch onward. Observed identity changes (e.g.
+  'firefox' -> 'firefox_firefox') are persisted as aliases in the geometry
+  store ('__aliases__'), so the early identity resolves the saved entry
+  IMMEDIATELY at window creation — the window is sized and positioned
+  before its first frame paints, with no animation at all. A one-shot
+  first-frame trigger catches identities landing between creation and
+  first paint. Pruning preserves the alias table; the save path refuses
+  reserved keys.
+
+### Preferences UI
+- About shows `version-name` (with the integer release in parentheses)
+  instead of the bare integer.
+- `page/panels.js` renamed to `page/style.js`; its reset is retitled
+  "Reset Style" with scope-clarifying wording (it only ever covered
+  styling keys). A confirmed "Reset All Settings" — every schema key —
+  now lives in Dashboard -> Data Management.
+- Icon audit against the current Adwaita symbolic set: replaced four icons
+  absent from GNOME 48+ themes (external-link -> link, desktop-theme ->
+  desktop-appearance, applications-development -> view-grid,
+  text-x-script -> text-x-generic).
+
 ## 26.07.14.8 (version 23)
 
 ### Preferences UI

@@ -56,8 +56,8 @@ export class DashboardPage extends Adw.PreferencesPage {
 
         navGroup.add(this._createNavRow('Wallpaper Engine', 'Manage dual-mode backgrounds', 'preferences-desktop-wallpaper-symbolic', 'wallpaper'));
         navGroup.add(this._createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-appearance-symbolic', 'css'));
-        navGroup.add(this._createNavRow('Apps', 'Customize the app grid button', 'applications-development-symbolic', 'apps'));
-        navGroup.add(this._createNavRow('Window Corners', 'Rounding, shadows, and transparency', 'preferences-desktop-theme-symbolic', 'window-corners'));
+        navGroup.add(this._createNavRow('Apps', 'Customize the app grid button', 'view-grid-symbolic', 'apps'));
+        navGroup.add(this._createNavRow('Window Corners', 'Rounding, shadows, and transparency', 'preferences-desktop-appearance-symbolic', 'window-corners'));
 
         // --- 4. DATA MANAGEMENT ---
         const dataGroup = new Adw.PreferencesGroup({
@@ -93,6 +93,21 @@ export class DashboardPage extends Adw.PreferencesPage {
         importBtn.connect('clicked', () => this._handleImport(importBtn));
         importRow.add_suffix(importBtn);
         dataGroup.add(importRow);
+
+        // Full Reset Row — resets EVERY key in the schema (the Style page's
+        // "Reset Style" only covers styling)
+        const resetRow = new Adw.ActionRow({
+            title: 'Reset All Settings',
+            subtitle: 'Restore every Lesion setting to its default value'
+        });
+        const resetBtn = new Gtk.Button({
+            icon_name: 'edit-undo-symbolic',
+            valign: Gtk.Align.CENTER,
+            css_classes: ['flat', 'destructive-action']
+        });
+        resetBtn.connect('clicked', () => this._confirmFullReset());
+        resetRow.add_suffix(resetBtn);
+        dataGroup.add(resetRow);
     }
 
     // --- HELPER COMPONENTS ---
@@ -332,6 +347,33 @@ export class DashboardPage extends Adw.PreferencesPage {
         });
 
         dialog.show();
+    }
+
+    _confirmFullReset() {
+        const dialog = new Adw.AlertDialog({
+            heading: 'Reset All Settings?',
+            body: 'Every Lesion setting — style, clock, apps, geometry data, corners, transparency, wallpaper — will return to its default value. Exported backups are not affected.',
+        });
+        dialog.add_response('cancel', 'Cancel');
+        dialog.add_response('reset', 'Reset Everything');
+        dialog.set_response_appearance('reset', Adw.ResponseAppearance.DESTRUCTIVE);
+        dialog.set_default_response('cancel');
+        dialog.set_close_response('cancel');
+
+        dialog.connect('response', (d, response) => {
+            if (response !== 'reset') return;
+            try {
+                this._settings.delay();
+                // Every key in the schema — future keys included automatically
+                for (const key of this._settings.settings_schema.list_keys())
+                    this._settings.reset(key);
+                this._settings.apply();
+            } catch (e) {
+                console.error('Full reset failed', e);
+            }
+        });
+
+        dialog.present(this.get_root());
     }
 }
 
