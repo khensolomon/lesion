@@ -3,6 +3,15 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.16.2 (version 28)
+
+### Dashboard
+- Reset All Settings icon fixed (edit-undo-symbolic did not render on the
+  system theme; replaced with view-refresh-symbolic, verified in use
+  elsewhere in the UI).
+- Window Geometry added to the Features quick-access list, using the same
+  icon and target as its menu registration.
+
 ## 26.07.16 (version 27)
 
 ### Window geometry: restore AFTER Mutter placement (journal-diagnosed)

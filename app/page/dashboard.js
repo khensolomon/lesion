@@ -58,6 +58,7 @@ export class DashboardPage extends Adw.PreferencesPage {
         navGroup.add(this._createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-appearance-symbolic', 'css'));
         navGroup.add(this._createNavRow('Apps', 'Customize the app grid button', 'view-grid-symbolic', 'apps'));
         navGroup.add(this._createNavRow('Window Corners', 'Rounding, shadows, and transparency', 'preferences-desktop-appearance-symbolic', 'window-corners'));
+        navGroup.add(this._createNavRow('Window Geometry', 'Remember and restore window size and position', 'video-single-display-symbolic', 'window-geometry'));
 
         // --- 4. DATA MANAGEMENT ---
         const dataGroup = new Adw.PreferencesGroup({
@@ -101,7 +102,7 @@ export class DashboardPage extends Adw.PreferencesPage {
             subtitle: 'Restore every Lesion setting to its default value'
         });
         const resetBtn = new Gtk.Button({
-            icon_name: 'edit-undo-symbolic',
+            icon_name: 'view-refresh-symbolic',
             valign: Gtk.Align.CENTER,
             css_classes: ['flat', 'destructive-action']
         });
