@@ -3,6 +3,44 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.16.4 (version 30)
+
+### Bundled icons (end of the icon-theme roulette)
+- The extension now ships its own symbolic icons (icon/lesion-*.svg) and
+  registers the directory as a GTK icon search path in preferences.
+  Recent adwaita-icon-theme trims kept removing symbolics the UI relied
+  on (edit-undo, view-refresh, link showed as the generic fallback).
+  Distinct visuals per action: Reset All Settings = circular reset arrow
+  (destructive red), Geometry Clear All = trash, Reset Style = eraser,
+  About documentation links = external-link arrow.
+
+### Window geometry
+- Fixed windows flashing 2-4 times in place at launch (most visible with
+  Chrome, also when opening links from About): each verify retry against
+  an app re-asserting its own size ran the fade animation — fade-out/in
+  at the same position is a flash. Verify corrections and the
+  position-only fallback are now instant; the fade remains only for a
+  first-time late restore.
+
+## 26.07.16.3 (version 29)
+
+### Window geometry: workspace memory and monitor identity
+- Windows now reopen on the workspace they were closed on
+  (`geometry-restore-workspace`, default on, toggleable on the Geometry
+  page). With dynamic workspaces, a trimmed workspace is recreated. A
+  wrong workspace counts as a verify mismatch, so it self-corrects.
+- Coordinates are now stored monitor-relative alongside the monitor's
+  index and geometry fingerprint. On restore, the fingerprint is matched
+  first (survives index shuffles after docking/undocking), then the
+  index; a missing monitor falls back to absolute coordinates clamped to
+  the current work area. Existing entries without monitor data keep
+  working via the fallback and upgrade themselves on the next save.
+
+### Dashboard
+- Reset All Settings is now a labeled destructive "Reset..." button per
+  the HIG — and immune to the icon-theme availability issues that ate two
+  icon attempts.
+
 ## 26.07.16.2 (version 28)
 
 ### Dashboard

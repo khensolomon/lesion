@@ -102,8 +102,9 @@ export class DashboardPage extends Adw.PreferencesPage {
             subtitle: 'Restore every Lesion setting to its default value'
         });
         const resetBtn = new Gtk.Button({
-            icon_name: 'view-refresh-symbolic',
+            icon_name: 'lesion-reset-symbolic', // bundled — theme-proof
             valign: Gtk.Align.CENTER,
+            tooltip_text: 'Reset All Settings',
             css_classes: ['flat', 'destructive-action']
         });
         resetBtn.connect('clicked', () => this._confirmFullReset());

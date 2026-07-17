@@ -3,6 +3,7 @@ import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
 import { log, logError } from '../util/logger.js';
 import { ExtensionComponent } from './base.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { isMaximized, maximize, unmaximize } from '../util/compat.js';
 
 /**
@@ -399,7 +400,10 @@ export class GeometryManager extends ExtensionComponent {
             const geo = this._lookupGeometry(win, appId);
             if (geo && tries < VERIFY_MAX_TRIES && !this._matchesGeometry(win, geo)) {
                 log(`[Geometry] ${appId} moved itself after restore; reapplying (${tries + 1}/${VERIFY_MAX_TRIES})`);
-                this._applyGeometry(win, appId, geo, data);
+                // data omitted deliberately: verify corrections are INSTANT.
+                // Fading each retry made apps that re-assert their own size
+                // (Chrome) flash 2-4 times in place at launch.
+                this._applyGeometry(win, appId, geo, null);
                 this._verifyRestore(win, data, appId, tries + 1);
             } else {
                 // Last resort: some apps insist on their own SIZE, but on
@@ -409,13 +413,9 @@ export class GeometryManager extends ExtensionComponent {
                     !isMaximized(win) && !win.is_fullscreen()) {
                     try {
                         const t = this._clampToWorkArea(win, geo);
-                        const before = win.get_frame_rect();
                         log(`[Geometry] ${appId} kept its own size; enforcing position only`);
-                        const doMove = () => win.move_frame(true, t.x, t.y);
-                        if (this._shouldAnimate(data))
-                            this._fadeMove(win, before, { x: t.x, y: t.y, w: before.width, h: before.height }, doMove);
-                        else
-                            doMove();
+                        // Instant for the same reason as verify retries
+                        win.move_frame(true, t.x, t.y);
                     } catch (e) {}
                 }
                 this._settleLater(win, data);
@@ -434,6 +434,10 @@ export class GeometryManager extends ExtensionComponent {
 
     _matchesGeometry(win, geo) {
         try {
+            if (this.getSettings().get_boolean('geometry-restore-workspace') &&
+                Number.isInteger(geo.ws) && !win.is_on_all_workspaces() &&
+                win.get_workspace()?.index() !== Math.min(geo.ws, 35))
+                return false;
             if (geo.max) return isMaximized(win);
             if (isMaximized(win)) return false;
             const r = win.get_frame_rect();
@@ -446,10 +450,58 @@ export class GeometryManager extends ExtensionComponent {
         }
     }
 
+    /**
+     * MONITOR IDENTITY. Coordinates are stored monitor-relative together
+     * with the monitor's index and geometry fingerprint. On restore, the
+     * fingerprint is matched first (survives index shuffles after
+     * docking/undocking), then the index, then the current monitor. A
+     * missing monitor falls back gracefully to absolute coordinates
+     * clamped to the current work area.
+     */
+    _monitorInfoFor(win, frame) {
+        try {
+            const idx = win.get_monitor();
+            const m = Main.layoutManager.monitors[idx];
+            if (!m) return {};
+            return {
+                mi: idx,
+                mr: [m.x, m.y, m.width, m.height],
+                rx: frame.x - m.x,
+                ry: frame.y - m.y,
+            };
+        } catch (e) {
+            return {};
+        }
+    }
+
+    _resolveMonitor(geo) {
+        try {
+            const monitors = Main.layoutManager.monitors;
+            if (geo.mr) {
+                const m = monitors.find(mm =>
+                    mm.x === geo.mr[0] && mm.y === geo.mr[1] &&
+                    mm.width === geo.mr[2] && mm.height === geo.mr[3]);
+                if (m) return m;
+            }
+            if (Number.isInteger(geo.mi) && monitors[geo.mi])
+                return monitors[geo.mi];
+        } catch (e) {}
+        return null;
+    }
+
     _clampToWorkArea(win, geo) {
         let { x, y, w, h } = geo;
         try {
-            const wa = win.get_work_area_current_monitor();
+            const mon = this._resolveMonitor(geo);
+            let wa = null;
+            if (mon && Number.isFinite(geo.rx)) {
+                // Remembered monitor is present: place relative to it
+                x = mon.x + geo.rx;
+                y = mon.y + geo.ry;
+                wa = win.get_work_area_for_monitor(mon.index);
+            } else {
+                wa = win.get_work_area_current_monitor();
+            }
             if (wa && wa.width > 0 && wa.height > 0) {
                 w = Math.min(w, wa.width);
                 h = Math.min(h, wa.height);
@@ -619,10 +671,32 @@ export class GeometryManager extends ExtensionComponent {
         return data && (GLib.get_monotonic_time() - data.createdAt) > ANIMATE_AFTER_MS * 1000;
     }
 
+    /**
+     * WORKSPACE MEMORY. Windows return to the workspace they were closed
+     * on. With dynamic workspaces the remembered index may no longer exist;
+     * change_workspace_by_index with append=true recreates it. Gated by
+     * 'geometry-restore-workspace' since some people prefer new windows on
+     * the current workspace.
+     */
+    _applyWorkspace(win, geo) {
+        try {
+            if (!this.getSettings().get_boolean('geometry-restore-workspace')) return;
+            if (!Number.isInteger(geo.ws)) return;
+            if (win.is_on_all_workspaces()) return;
+            const current = win.get_workspace()?.index();
+            const target = Math.min(geo.ws, 35);
+            if (current !== target) {
+                log(`[Geometry] Moving window to workspace ${target}`);
+                win.change_workspace_by_index(target, true);
+            }
+        } catch (e) {}
+    }
+
     _applyGeometry(win, appId, geo, data = null) {
         if (win.is_fullscreen()) return;
 
         try {
+            this._applyWorkspace(win, geo);
             // Apply the floating rect first (when we have one) so a later
             // unmaximize returns to the remembered size, then apply the
             // maximized state on top if that's how the app was closed.
@@ -688,18 +762,22 @@ export class GeometryManager extends ExtensionComponent {
         const rect = win.get_frame_rect();
         if (rect.width < 50 || rect.height < 50) return;
 
+        // Workspace + monitor identity captured alongside the rect
+        let ws = null;
+        try {
+            if (!win.is_on_all_workspaces())
+                ws = win.get_workspace()?.index() ?? null;
+        } catch (e) {}
+        const monInfo = this._monitorInfoFor(win, rect);
+
+        const snapshot = {
+            x: rect.x, y: rect.y, w: rect.width, h: rect.height,
+            max: false, ws, ...monInfo,
+        };
+
         const entry = this._geometryCache[appId] || {};
-        Object.assign(entry, {
-            x: rect.x,
-            y: rect.y,
-            w: rect.width,
-            h: rect.height,
-            max: false,
-            last_seen: Date.now()
-        });
-        this._writeTitleGeo(entry, win, {
-            x: rect.x, y: rect.y, w: rect.width, h: rect.height, max: false
-        });
+        Object.assign(entry, snapshot, { last_seen: Date.now() });
+        this._writeTitleGeo(entry, win, snapshot);
         this._geometryCache[appId] = entry;
 
         log(`[Geometry] Saved ${appId} ('${win.get_title?.() ?? ''}'): ${rect.x},${rect.y} [${rect.width}x${rect.height}]`);

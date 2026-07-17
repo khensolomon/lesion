@@ -14,6 +14,19 @@ export default class GnomeSplitViewPrefs extends ExtensionPreferences {
     _settingsSignal = null;
 
     fillPreferencesWindow(window) {
+        // Bundled icons: recent adwaita-icon-theme trims removed several
+        // symbolics our UI relied on (edit-undo, view-refresh, link, ...),
+        // so we ship our own and register the search path once.
+        try {
+            const display = window.get_display();
+            const theme = Gtk.IconTheme.get_for_display(display);
+            const iconDir = GLib.build_filenamev([this.path, 'icon']);
+            if (!theme.get_search_path()?.includes(iconDir))
+                theme.add_search_path(iconDir);
+        } catch (e) {
+            console.error('Failed to register bundled icon path', e);
+        }
+
         try {
             // FIX: Robustly load fresh metadata from disk using Gio
             const freshMetadata = this._loadLocalMetadata(this.path);

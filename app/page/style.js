@@ -39,9 +39,9 @@ export class StylePage extends Adw.PreferencesPage {
             subtitle: 'Restore panel, popup, and button styling to defaults. Other settings are untouched'
         });
         const resetBtn = new Gtk.Button({
-            icon_name: 'edit-undo-symbolic',
+            icon_name: 'lesion-erase-symbolic', // bundled — theme-proof
             valign: Gtk.Align.CENTER,
-            tooltip_text: 'Reset to Defaults'
+            tooltip_text: 'Reset styling to defaults'
         });
         resetBtn.add_css_class('flat');
         resetBtn.connect('clicked', () => this._resetStyleSettings());

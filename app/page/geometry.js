@@ -26,6 +26,14 @@ export function createGeometryUI() {
     settings.bind('geometry-enabled', enableRow, 'active', Gio.SettingsBindFlags.DEFAULT);
     mainGroup.add(enableRow);
 
+    const wsRow = new Adw.SwitchRow({
+        title: 'Restore Workspace',
+        subtitle: 'Reopen windows on the workspace they were closed on (recreated if needed)'
+    });
+    settings.bind('geometry-restore-workspace', wsRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+    settings.bind('geometry-enabled', wsRow, 'sensitive', Gio.SettingsBindFlags.GET);
+    mainGroup.add(wsRow);
+
     // --- SECTION 2: DATA LIST ---
     const dataGroup = new Adw.PreferencesGroup({
         title: 'Saved Applications',
@@ -190,8 +198,9 @@ export function createGeometryUI() {
     });
 
     const clearBtn = new Gtk.Button({
-        label: 'Clear All',
+        icon_name: 'lesion-clear-symbolic', // bundled — theme-proof
         valign: Gtk.Align.CENTER,
+        tooltip_text: 'Clear all saved window geometry',
     });
     clearBtn.add_css_class('destructive-action');
 
