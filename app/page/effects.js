@@ -8,7 +8,7 @@ import { AppConfig } from '../config.js';
  *
  * @returns {Adw.PreferencesPage} The constructed preferences page.
  */
-export function createCornersUI() {
+export function createEffectsUI() {
     const page = new Adw.PreferencesPage();
     const settings = AppConfig.getSettings();
 

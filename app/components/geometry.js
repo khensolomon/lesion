@@ -51,6 +51,7 @@ const ANIMATE_AFTER_MS = 250;     // Window visible longer than this -> fade-mov
 const FADE_OUT_MS = 90;           // Fade-out before an already-visible window is moved
 const FADE_IN_MS = 140;           // Fade-in at the destination
 const MOVE_MIN_DELTA = 8;         // Don't animate sub-8px corrections
+const PRUNE_RECENT_KEEP_DAYS = 14; // Recency floor: never evict fresh entries
 const CLOAK_OFFSET = -100000;     // Off-screen translation while placing
 const CLOAK_MAX_MS = 350;         // Reveal deadline if identity never resolves
 const REVEAL_FADE_MS = 120;       // Soften late reveals (after map anim ended)
@@ -382,6 +383,19 @@ export class GeometryManager extends ExtensionComponent {
             data.timerId = 0;
         }
         data.restoredAs = appId;
+
+        // Usage accounting: a RESTORE is the event that proves an entry's
+        // value (saves fire constantly and measure nothing). Feeds the
+        // frequency-aware pruning below.
+        try {
+            const entry = this._geometryCache[appId];
+            if (entry) {
+                entry.uses = (entry.uses || 0) + 1;
+                entry.last_seen = Date.now();
+                this._queueSave();
+            }
+        } catch (e) {}
+
         const geo = this._lookupGeometry(win, appId);
         this._applyGeometry(win, appId, geo, data);
         if (data.shownSeen) {
@@ -705,7 +719,17 @@ export class GeometryManager extends ExtensionComponent {
                 if (!isMaximized(win)) {
                     const t = this._clampToWorkArea(win, geo);
                     const before = win.get_frame_rect();
-                    log(`[Geometry] Restoring ${appId} to ${t.x},${t.y} [${t.w}x${t.h}]`);
+                    // Diagnostic for edge-snapped apps (Firefox/Chrome) that
+                    // show a shadow strip after restore: a nonzero
+                    // frame-buffer delta here means the app's CSD shadow
+                    // extents were still in floating mode when measured.
+                    try {
+                        const b = win.get_buffer_rect();
+                        log(`[Geometry] Restoring ${appId} to ${t.x},${t.y} [${t.w}x${t.h}] ` +
+                            `(frame-buffer delta ${before.x - b.x},${before.y - b.y})`);
+                    } catch (e) {
+                        log(`[Geometry] Restoring ${appId} to ${t.x},${t.y} [${t.w}x${t.h}]`);
+                    }
                     const doMove = () => win.move_resize_frame(true, t.x, t.y, t.w, t.h);
                     if (!geo.max && this._shouldAnimate(data))
                         this._fadeMove(win, before, t, doMove);
@@ -785,6 +809,15 @@ export class GeometryManager extends ExtensionComponent {
     }
 
     _queueSave() {
+        // Cap pressure between shell restarts: prune opportunistically once
+        // the store meaningfully exceeds the cap, not only at enable.
+        try {
+            const count = Object.keys(this._geometryCache)
+                .filter(k => !k.startsWith('__')).length;
+            if (count > PRUNE_MAX_ENTRIES + 20)
+                this._pruneCache();
+        } catch (e) {}
+
         if (this._saveTimeoutId)
             GLib.source_remove(this._saveTimeoutId);
 
@@ -833,8 +866,18 @@ export class GeometryManager extends ExtensionComponent {
                 .filter(([, geo]) => !geo.last_seen || (now - geo.last_seen) < maxAge);
 
             if (entries.length > PRUNE_MAX_ENTRIES) {
-                entries.sort((a, b) => (b[1].last_seen || 0) - (a[1].last_seen || 0));
-                entries = entries.slice(0, PRUNE_MAX_ENTRIES);
+                // Recency floor: anything used in the last two weeks is
+                // untouchable (a brand-new app must not lose to an old
+                // high-count one). Beyond the floor, evict the least-USED
+                // first, recency as tiebreak.
+                const recentMs = PRUNE_RECENT_KEEP_DAYS * 24 * 60 * 60 * 1000;
+                const recent = entries.filter(([, g]) => (now - (g.last_seen || 0)) < recentMs);
+                const older = entries.filter(([, g]) => (now - (g.last_seen || 0)) >= recentMs);
+                older.sort((a, b) =>
+                    ((b[1].uses || 0) - (a[1].uses || 0)) ||
+                    ((b[1].last_seen || 0) - (a[1].last_seen || 0)));
+                entries = recent.concat(
+                    older.slice(0, Math.max(0, PRUNE_MAX_ENTRIES - recent.length)));
             }
 
             const pruned = Object.fromEntries(entries);

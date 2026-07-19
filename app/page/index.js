@@ -8,7 +8,7 @@ import { createAppsUI } from './apps.js';
 import { createStyleUI } from "./style.js";
 // import { createSettingUI } from "./setting.js";
 // import { createAppButtonUI } from './appbutton.js';
-import { createCornersUI } from './corners.js';
+import { createEffectsUI } from './effects.js';
 // import { createDockUI } from './dock.js';
 // import { createMimicUI } from './mimic.js';
 // import Adw from "gi://Adw";
@@ -82,12 +82,12 @@ export function getPages() {
           ui: createCssUI,
         },        
         {
-          id: "window-corners",
-          title: "Corners",
+          id: "window-effects",
+          title: "Window Effects",
           icon: "preferences-desktop-appearance-symbolic",
           description: "Uniform rounded corners for application windows",
           keywords: ["corners", "round", "radius", "windows", "square"],
-          ui: createCornersUI,
+          ui: createEffectsUI,
         },
         {
           id: "window-geometry",

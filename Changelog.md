@@ -3,6 +3,42 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.18.2 (version 32)
+
+### Window geometry: smart data recycling
+- Entries now track a usage count, incremented on RESTORE (the event that
+  proves an entry's value; saves fire constantly and measure nothing).
+  No settings-schema change: the data lives inside the geometry-data JSON
+  and entries self-upgrade.
+- Pruning is now frequency-aware with a recency floor: entries used within
+  the last 14 days are never evicted (a brand-new app must not lose to an
+  old high-count one); beyond the floor, cap eviction removes the
+  least-used first with recency as tiebreak. Entries unseen for 180 days
+  drop regardless of count, and title sub-slots keep their LRU eviction.
+- Pruning also runs opportunistically whenever the store meaningfully
+  exceeds the cap between shell restarts, not only at enable.
+
+## 26.07.18 (version 31)
+
+### Window Effects (renamed from Corners)
+- The page and component now match their scope: rounding, shadows, smart
+  edges, and transparency. Renamed `app/components/corners.js` ->
+  `effects.js` (CornersManager -> EffectsManager), `app/page/corners.js`
+  -> `effects.js`, page id `window-corners` -> `window-effects`, menu
+  title "Corners" -> "Window Effects", and the Dashboard nav row.
+  Settings keys are unchanged (corners-*, transparency-*), so no dconf
+  migration is needed.
+
+### Geometry page
+- "Reset Storage" retitled "Clear Saved Geometry" with an honest subtitle
+  (entries rebuild through normal use), and the clear button dropped its
+  destructive red styling — the wording and alarm level now match what
+  the action actually does.
+- Restore logging now records the frame-buffer delta, to diagnose the
+  reported shadow strip on edge-snapped Firefox/Chrome restores (a
+  nonzero delta at restore time would confirm the app's CSD shadow
+  extents were still in floating mode when measured).
+
 ## 26.07.16.4 (version 30)
 
 ### Bundled icons (end of the icon-theme roulette)

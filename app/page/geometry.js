@@ -193,8 +193,8 @@ export function createGeometryUI() {
     page.add(clearGroup);
 
     const clearRow = new Adw.ActionRow({
-        title: 'Reset Storage',
-        subtitle: 'Remove all saved window positions'
+        title: 'Clear Saved Geometry',
+        subtitle: 'Remove all remembered window positions and sizes. Entries rebuild as you move windows'
     });
 
     const clearBtn = new Gtk.Button({
@@ -202,7 +202,7 @@ export function createGeometryUI() {
         valign: Gtk.Align.CENTER,
         tooltip_text: 'Clear all saved window geometry',
     });
-    clearBtn.add_css_class('destructive-action');
+    clearBtn.add_css_class('flat'); // low-stakes: data rebuilds through normal use
 
     clearBtn.connect('clicked', () => {
         // Clearing settings will trigger the signal -> updateList()

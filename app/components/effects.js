@@ -122,7 +122,7 @@ const ClipShadowEffect = GObject.registerClass({
     }
 });
 
-export class CornersManager extends ExtensionComponent {
+export class EffectsManager extends ExtensionComponent {
 
     onEnable() {
         // win -> { effect, sigs, actor, target, shadow, bindings }

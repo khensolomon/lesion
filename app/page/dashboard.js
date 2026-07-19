@@ -57,7 +57,7 @@ export class DashboardPage extends Adw.PreferencesPage {
         navGroup.add(this._createNavRow('Wallpaper Engine', 'Manage dual-mode backgrounds', 'preferences-desktop-wallpaper-symbolic', 'wallpaper'));
         navGroup.add(this._createNavRow('Window Styles', 'Inject custom CSS themes', 'preferences-desktop-appearance-symbolic', 'css'));
         navGroup.add(this._createNavRow('Apps', 'Customize the app grid button', 'view-grid-symbolic', 'apps'));
-        navGroup.add(this._createNavRow('Window Corners', 'Rounding, shadows, and transparency', 'preferences-desktop-appearance-symbolic', 'window-corners'));
+        navGroup.add(this._createNavRow('Window Effects', 'Rounding, shadows, and transparency', 'preferences-desktop-appearance-symbolic', 'window-effects'));
         navGroup.add(this._createNavRow('Window Geometry', 'Remember and restore window size and position', 'video-single-display-symbolic', 'window-geometry'));
 
         // --- 4. DATA MANAGEMENT ---
