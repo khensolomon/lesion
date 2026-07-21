@@ -47,6 +47,13 @@ export function createEffectsUI() {
     settings.bind('corners-enabled', smartRow, 'sensitive', Gio.SettingsBindFlags.GET);
     mainGroup.add(smartRow);
 
+    const x11Row = new Adw.SwitchRow({
+        title: 'Manage X11 Windows',
+        subtitle: 'Applies effects to apps running through Xwayland. Disable if X11 apps destabilize the session'
+    });
+    settings.bind('effects-manage-x11', x11Row, 'active', Gio.SettingsBindFlags.DEFAULT);
+    mainGroup.add(x11Row);
+
     // --- Window Transparency ---
     const transGroup = new Adw.PreferencesGroup({
         title: 'Window Transparency',

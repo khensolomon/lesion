@@ -3,6 +3,209 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.21.7 (version 44)
+
+### Window geometry: never move windows from inside signal emission
+- Journal evidence (Jul 21, Firefox): the session ended immediately after
+  "Restoring firefox_firefox" -> ">> move_resize_frame", with NO
+  authoritative-apply line preceding it — identifying the EARLY apply,
+  which ran synchronously inside the 'window-created' handler. Moving a
+  window Mutter is still constructing, from within its own signal
+  emission, is re-entrancy into window management at the most fragile
+  point in a window's life. This is the same path Chrome took.
+- The early apply is removed entirely. It has been redundant since the
+  authoritative post-first-frame apply landed, and the cloak covers the
+  wait. Identity resolution still happens early — it performs no window
+  operations.
+- All applies (authoritative and already-mapped) now run from a fresh
+  main-loop iteration via a shared deferred-apply helper, so no window
+  operation is ever issued from inside 'window-created', 'first-frame' or
+  'shown'. X11 clients keep their additional 250ms clearance.
+
+## 26.07.21.6 (version 43)
+
+### Window geometry: recycled identity ids (root cause of the crashes)
+- Shell.WindowTracker invents a fallback id of the form 'window:N' for
+  windows it cannot match to a .desktop file. Those ids come from an
+  internal counter and are RECYCLED across unrelated windows. Version 38
+  fed them into the store and the alias learner, producing entries such
+  as "window:3 -> google-chrome". When Chrome's Task Manager opened as an
+  unmatched window and drew a recycled id, its geometry was resolved to
+  Chrome's main window and the small utility window was resized to
+  1875x1408 — the final traced operation before each session loss, and
+  the reason reopening the Task Manager reproduced it.
+- Synthetic ids are now rejected everywhere: identity resolution falls
+  back to wm_class, aliases are never learned from them, and neither
+  restores nor saves accept them.
+- Existing stores self-heal: recycled ids and any aliases referencing
+  them are purged on load, with a journal line reporting the count.
+
+## 26.07.21.5 (version 42)
+
+### Window geometry: keep X11 work out of the map sequence
+- Correction to the previous entry: the session terminations occur only
+  with geometry saving ON. The timing also fits version 38, which gave
+  Chrome a resolvable identity for the first time ("No saved entry for
+  'Google-chrome'" until then) — so geometry began operating on
+  Xwayland-backed windows exactly when the crashes started.
+- X11 clients no longer receive any geometry operation during their map
+  sequence: the early apply is skipped entirely and the authoritative
+  apply is deferred 250ms past first-frame.
+- Workspace restore is skipped for X11 clients:
+  change_workspace_by_index with append=true mutates the workspace set
+  and propagates X11 property updates to Xwayland.
+- Every risky window operation (move_resize_frame, maximize,
+  change_workspace_by_index) is now traced immediately BEFORE it runs,
+  with the client type. Since an Xwayland exit produces no [Lesion]
+  error, the final trace line in the journal identifies the exact call
+  that preceded a crash.
+
+## 26.07.21.4 (version 41)
+
+### Window Effects: Xwayland safety
+- With geometry saving switched OFF the session still terminated, which
+  clears geometry of responsibility and leaves effects as the component
+  that touches X11 windows: the corner shader is applied to the surface
+  child actor of Xwayland-backed windows, and Xwayland is itself a
+  Wayland client of the compositor, so operations on its surfaces can
+  drop that connection — which ends the session.
+- New "Manage X11 Windows" toggle (effects-manage-x11, default on)
+  excludes Xwayland windows from effects entirely. Like its geometry
+  counterpart it can be flipped from a TTY without loading preferences.
+
+### Geometry page
+- Reserved internal keys are no longer rendered as applications: the
+  learned identity table ('__aliases__') appeared as a row with undefined
+  size and position.
+
+## 26.07.21.3 (version 40)
+
+### Window geometry: X11 client safety (Xwayland termination)
+- The journal from the failed session showed the shell did NOT crash:
+  Xwayland exited unexpectedly ("Connection to xwayland lost"), and the
+  shell then quit because Xwayland is mandatory — that is the forced
+  logout. No [Lesion] error appeared in the log at all. Chrome and its
+  Task Manager are X11 clients, so the exposure is what the extension
+  does to Xwayland-backed windows.
+- X11 clients are no longer cloaked: X11 geometry fields are 16-bit
+  signed, and the cloak translated actors by -100000px.
+- All applied geometry is clamped to a 16-bit-safe range as a hard rail.
+- X11 clients receive a single corrective pass instead of up to four:
+  rapid repeated configure requests are the other half of the exposure.
+- New "Manage X11 Windows" toggle (geometry-manage-x11, default on) to
+  exclude Xwayland windows from geometry entirely. It can be flipped from
+  a TTY without loading the preferences UI.
+
+## 26.07.21.2 (version 39)
+
+### Window geometry: crash hardening (shell segfault / forced logout)
+- Reported: opening Chrome's Task Manager, and subsequently launching
+  Chrome at all, terminated the GNOME Shell session; GNOME then disabled
+  all extensions. Root hazard identified: deferred work could run against
+  an already-unmanaged window. Calling into a destroyed MetaWindow is a
+  use-after-free at the C level, which takes down the shell (and on
+  Wayland the session). Chrome creates and destroys short-lived windows
+  aggressively, making it the likeliest trigger.
+- All four deferred timers (identity poll, verify, settle, cloak
+  deadline) shared a single id slot, so one could overwrite another and
+  become uncancellable — a stale timer could then fire after the window
+  was gone. Each now has its own slot, and untracking cancels all of them.
+- Every deferred entry point (timers, first-frame, shown, grab-op-end,
+  authoritative apply, identity resolution, save path) now verifies the
+  window is still alive before touching it.
+- The window-created handler no longer lets exceptions escape into shell
+  signal emission.
+- Workspace restore clamps the target index to the existing workspace set
+  (+1 at most); a large stored index with append=true could previously
+  spawn many workspaces.
+
+## 26.07.21 (version 38)
+
+### Window geometry: canonical, session-independent identity
+- Entries are now keyed by the .desktop app id resolved through
+  Shell.WindowTracker, which is identical under Wayland and Xorg, instead
+  of wm_class, which is not ('TextEditor' vs 'gnome-text-editor',
+  'gnome-terminal-server' vs 'gnome-terminal'). Each session therefore
+  stopped building a store the other could not read. wm_class remains the
+  fallback for windows the tracker cannot match (many terminals, some
+  Electron and Wine apps), and entries saved under old wm_class keys stay
+  reachable through a legacy-key lookup, so no saved geometry is lost.
+- Fixed the two-stage flight on Xorg: wm_class changes mid-launch there,
+  so the early restore and the authoritative apply resolved two different
+  entries and applied two positions in sequence. The identity used for a
+  window is now locked once its restore resolves; only the per-title slot
+  is refreshed afterwards.
+- The session type is logged at enable, so a journal capture identifies
+  which session produced it.
+
+## 26.07.20.3 (version 37)
+
+### Window geometry: session identity bridge
+- Journal analysis (Jul 20 evening) showed a fully healthy pipeline with
+  the "flying" occurring on the Xorg session, where every app announces a
+  different WM_CLASS than on Wayland ('Google-chrome' vs 'google-chrome',
+  'Gnome-terminal' vs 'gnome-terminal-server'): entries saved under
+  Wayland names were unreachable, so no restore ran and X11 apps'
+  own startup self-placement showed raw. Pure casing variants are now
+  bridged with a case-insensitive lookup fallback (logged as
+  "Case-variant hit"). Structurally different names cannot be bridged
+  automatically and keep per-session entries.
+
+## 26.07.20.2 (version 36)
+
+### Window geometry: teleport-pop on reveal fixed
+- The Jul 20 journal confirmed the first structurally healthy pipeline
+  (authoritative first-frame apply on every launch, zero verify fights).
+  The remaining artifact was the reveal itself: the map animation plays
+  while the window is cloaked off-screen, and apps needing ~300ms to
+  paint their first frame finished it before the reveal — snapping
+  translation on a fully opaque actor read as a teleport-pop, and the
+  old elapsed>300ms fade threshold sat exactly on that boundary. The
+  reveal now always fades in (120ms) unless a live map animation is
+  still running to provide the fade itself.
+
+## 26.07.20 (version 35)
+
+### Window geometry: authoritative apply re-anchored to 'first-frame'
+- Journal evidence (three launches, Jul 20) proved the 'shown'-based
+  post-placement apply NEVER executed on this Mutter build — the signal
+  did not fire, its try/catch hid the failure, and every restore fell
+  back to the visible verify correction (the returned flying). The
+  authoritative apply is now anchored to the window actor's 'first-frame'
+  signal — one the shell itself relies on, guaranteed to fire after
+  placement — with 'shown' kept as a secondary trigger. Both routes share
+  one idempotent apply and log their reason, so a journal capture shows
+  exactly which path ran. Late identity resolution reveals immediately
+  when the window is already mapped via either signal.
+
+## 26.07.18.4 (version 34)
+
+### Window geometry: flying-regression hardening
+- Clear All no longer wipes the learned identity aliases ('__aliases__'):
+  they are infrastructure (what makes late-identity apps restore before
+  first paint), not user geometry. Clearing them re-introduced visible
+  late restores until every alias was re-learned — the most likely cause
+  of the reported flying regression after test-cycle clears.
+- Cloak deadline raised 350ms -> 550ms: Chrome-class identities often land
+  around 400-600ms, so windows were revealed at spawn moments before
+  their restore resolved.
+- The authoritative 'shown' apply now logs (including cloak state), making
+  a single journal capture decisive about which path a flying launch took.
+
+## 26.07.18.3 (version 33)
+
+### Window Effects: shadow actors no longer swallow clicks
+- Fixed intermittent mouse clicks requiring 2-3 attempts: the replacement
+  shadow actors are St.Bins extending SHADOW_PADDING (80px) beyond every
+  window, and St widgets are input-reactive by default — an invisible
+  80px click trap around each rounded window, swallowing clicks aimed at
+  windows behind it (worst exactly where background windows are clicked:
+  near their edges). Symptoms matched: fine on a fresh session with few
+  windows, degrading as windows and their shadow rings accumulate, gone
+  with the extension disabled, independent of Wayland/Xorg. Shadow bins
+  and their children are now reactive: false / can_focus: false /
+  track_hover: false — shadows never participate in input.
+
 ## 26.07.18.2 (version 32)
 
 ### Window geometry: smart data recycling

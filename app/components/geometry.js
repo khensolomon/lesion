@@ -1,4 +1,5 @@
 import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
 import { log, logError } from '../util/logger.js';
@@ -52,8 +53,10 @@ const FADE_OUT_MS = 90;           // Fade-out before an already-visible window i
 const FADE_IN_MS = 140;           // Fade-in at the destination
 const MOVE_MIN_DELTA = 8;         // Don't animate sub-8px corrections
 const PRUNE_RECENT_KEEP_DAYS = 14; // Recency floor: never evict fresh entries
-const CLOAK_OFFSET = -100000;     // Off-screen translation while placing
-const CLOAK_MAX_MS = 350;         // Reveal deadline if identity never resolves
+const CLOAK_OFFSET = -100000;     // Off-screen translation (Wayland only)
+const X11_COORD_LIMIT = 32000;    // X11 geometry is 16-bit signed
+const X11_APPLY_DELAY_MS = 250;   // Stay clear of the X11 map sequence
+const CLOAK_MAX_MS = 550;         // Reveal deadline if identity never resolves
 const REVEAL_FADE_MS = 120;       // Soften late reveals (after map anim ended)
 
 export class GeometryManager extends ExtensionComponent {
@@ -67,6 +70,9 @@ export class GeometryManager extends ExtensionComponent {
         log("[Geometry] enabling manager");
 
         this._lastWrittenJson = null;
+        try {
+            log(`[Geometry] Session type: ${Meta.is_wayland_compositor() ? 'Wayland' : 'X11'}`);
+        } catch (e) {}
         this._loadCache();
         this._pruneCache();
 
@@ -86,8 +92,12 @@ export class GeometryManager extends ExtensionComponent {
 
         const display = global.display;
         const id = display.connect('window-created', (d, win) => {
-            // New window: track AND restore
-            this._trackWindow(win, true);
+            // Never let an exception escape into shell signal emission
+            try {
+                this._trackWindow(win, true);
+            } catch (e) {
+                logError('[Geometry] window-created handler failed', e);
+            }
         });
         this._signals.push({ obj: display, id });
 
@@ -98,7 +108,7 @@ export class GeometryManager extends ExtensionComponent {
         // debounce captured the final rect.
         const grabId = display.connect('grab-op-end', (d, win) => {
             const data = win ? this._windowData.get(win) : null;
-            if (!data) return;
+            if (!data || !this._isAlive(win)) return;
             if (data.timerId) {
                 GLib.source_remove(data.timerId);
                 data.timerId = 0;
@@ -133,8 +143,66 @@ export class GeometryManager extends ExtensionComponent {
 
     // --- Tracking ------------------------------------------------------
 
+    /**
+     * LIVENESS GUARD. Deferred work (timers, first-frame callbacks) can run
+     * after a window has been unmanaged — Chrome's Task Manager creates and
+     * destroys windows aggressively. Calling into a destroyed MetaWindow is
+     * a use-after-free at the C level, which takes the whole shell down
+     * (and on Wayland, the session with it). Every deferred entry point
+     * checks this first.
+     */
+    /**
+     * X11 CLIENTS NEED A CONSERVATIVE PATH. Journal evidence (Jul 21):
+     * the session did not die from a shell crash — Xwayland itself exited
+     * ("Connection to xwayland lost" / "Xwayland exited unexpectedly"),
+     * and the shell then quit because Xwayland is mandatory. No [Lesion]
+     * error appeared at all. Chrome and its Task Manager are X11 clients,
+     * and X11 geometry is 16-bit signed: the cloak's -100000px offset and
+     * rapid repeated configure requests from verify retries are exactly
+     * the sort of thing that can take an X server down. X11 windows
+     * therefore get: no cloak, clamped coordinates, and a single apply.
+     */
+    /**
+     * OPERATION TRACE. The session terminations leave no [Lesion] error
+     * because the failure is Xwayland exiting, not our JS throwing. Naming
+     * each risky window operation immediately BEFORE it runs makes the
+     * final journal line before a crash identify the exact call.
+     */
+    _trace(win, op, detail = '') {
+        try {
+            const kind = this._isX11(win) ? 'X11' : 'wl';
+            log(`[Geometry] >> ${op} (${kind})${detail ? ' ' + detail : ''}`);
+        } catch (e) {}
+    }
+
+    _isX11(win) {
+        try {
+            return win.get_client_type() === Meta.WindowClientType.X11;
+        } catch (e) {
+            return false; // unknown: treat as Wayland-safe
+        }
+    }
+
+    _isAlive(win) {
+        if (!win || !this._windowData.has(win)) return false;
+        try {
+            if (typeof win.is_destroyed === 'function' && win.is_destroyed()) return false;
+            return win.get_compositor_private() !== null;
+        } catch (e) {
+            return false;
+        }
+    }
+
     _shouldManage(win) {
         if (!win) return false;
+        // Escape hatch for the Xwayland termination issue: if X11 windows
+        // ever destabilize the session again, this can be flipped off from
+        // a TTY without loading the preferences UI.
+        try {
+            if (this._isX11(win) &&
+                !this.getSettings().get_boolean('geometry-manage-x11'))
+                return false;
+        } catch (e) {}
         // NORMAL only: dialogs, popups, tooltips, docks and menus must not
         // read from or write to the per-app slot.
         if (win.get_window_type() !== Meta.WindowType.NORMAL) return false;
@@ -162,6 +230,9 @@ export class GeometryManager extends ExtensionComponent {
             firstId: null,
             cloaked: false,
             cloakTimerId: 0,
+            verifyTimerId: 0,
+            settleTimerId: 0,
+            x11TimerId: 0,
             shownSeen: false,
             createdAt: GLib.get_monotonic_time(),
         };
@@ -179,7 +250,9 @@ export class GeometryManager extends ExtensionComponent {
                 if (actor) {
                     const ffId = actor.connect('first-frame', () => {
                         try { actor.disconnect(ffId); } catch (e) {}
+                        if (!this._isAlive(win)) return;
                         this._tryResolveRestore(win, data);
+                        this._authoritativeApply(win, data, 'first-frame');
                     });
                 }
             } catch (e) {}
@@ -195,25 +268,15 @@ export class GeometryManager extends ExtensionComponent {
             try {
                 const shownId = win.connect('shown', () => {
                     try { win.disconnect(shownId); } catch (e) {}
+                    if (!this._isAlive(win)) return;
                     data.shownSeen = true;
-                    if (!this._windowData.has(win)) return;
-                    if (data.restored) {
-                        // Re-lookup: the title may have arrived by now,
-                        // selecting a better per-title slot.
-                        let appId = null;
-                        try { appId = win.get_wm_class(); } catch (e) {}
-                        const effective = (appId && this._geometryCache[appId])
-                            ? appId : data.restoredAs;
-                        const geo = this._lookupGeometry(win, effective);
-                        if (geo) this._applyGeometry(win, effective, geo, data);
-                    }
-                    this._reveal(win, data);
+                    this._authoritativeApply(win, data, 'shown');
                 });
             } catch (e) {}
 
             const resolved = this._tryResolveRestore(win, data);
             let idNow = null;
-            try { idNow = win.get_wm_class(); } catch (e) {}
+            idNow = this._identityFor(win);
 
             // Cloak when something will happen off-view: either a restore
             // already resolved (it must be re-applied post-placement) or the
@@ -247,9 +310,11 @@ export class GeometryManager extends ExtensionComponent {
             }
         } catch (e) {}
 
-        if (data.timerId) {
-            GLib.source_remove(data.timerId);
-            data.timerId = 0;
+        for (const slot of ['timerId', 'verifyTimerId', 'settleTimerId', 'x11TimerId']) {
+            if (data[slot]) {
+                GLib.source_remove(data[slot]);
+                data[slot] = 0;
+            }
         }
         data.signals.forEach(id => {
             try { win.disconnect(id); } catch (e) {}
@@ -270,6 +335,52 @@ export class GeometryManager extends ExtensionComponent {
      * after a grace period so saving can begin.
      */
     /**
+     * CANONICAL IDENTITY. wm_class is session-dependent: the same app
+     * reports different values under Wayland and Xorg ('TextEditor' vs
+     * 'gnome-text-editor', 'gnome-terminal-server' vs 'gnome-terminal'),
+     * so each session built a store the other could not read — and on Xorg
+     * the value CHANGES mid-launch, making the early restore and the
+     * authoritative apply resolve two different entries: the two-stage
+     * flight.
+     *
+     * Shell.WindowTracker maps any window, X11 or Wayland, to its .desktop
+     * app, which is identical across sessions. That app id is the key;
+     * wm_class remains the fallback for windows the tracker cannot match
+     * (many terminals, some Electron and Wine apps).
+     */
+    /**
+     * Shell.WindowTracker invents a fallback id of the form 'window:N' for
+     * windows it cannot match to a .desktop file. Those ids come from an
+     * internal counter and are RECYCLED across unrelated windows, so they
+     * must never be stored or aliased: doing so taught the extension that
+     * 'window:3' meant Chrome, and Chrome's Task Manager — an unmatched
+     * window that later drew the same id — was then resized to Chrome's
+     * main-window geometry, ending the session.
+     */
+    _isSyntheticId(id) {
+        return !id || /^window:\d+$/.test(id);
+    }
+
+    _identityFor(win) {
+        if (!win) return null;
+        try {
+            if (typeof win.is_destroyed === 'function' && win.is_destroyed()) return null;
+        } catch (e) {
+            return null;
+        }
+        try {
+            const app = Shell.WindowTracker.get_default().get_window_app(win);
+            const id = app?.get_id()?.replace(/\.desktop$/, '');
+            if (id && !this._isSyntheticId(id)) return id;
+        } catch (e) {}
+        try {
+            return win.get_wm_class() || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
      * Identity resolution with ALIAS LEARNING.
      *
      * Several apps establish their final identity late (Firefox maps as
@@ -284,11 +395,11 @@ export class GeometryManager extends ExtensionComponent {
      * animation at all.
      */
     _tryResolveRestore(win, data) {
-        if (data.restored || !this._windowData.has(win)) return false;
+        if (data.restored || !this._isAlive(win)) return false;
 
         let appId = null;
-        try { appId = win.get_wm_class(); } catch (e) {}
-        if (!appId) return false;
+        appId = this._identityFor(win);
+        if (!appId || this._isSyntheticId(appId)) return false;
 
         if (!data.firstId) {
             data.firstId = appId;
@@ -306,6 +417,34 @@ export class GeometryManager extends ExtensionComponent {
             }
         }
 
+        // Legacy entries (written before canonical app ids) are keyed by
+        // wm_class; keep them reachable so nobody loses saved geometry.
+        if (!this._geometryCache[effective]) {
+            let wmClass = null;
+            try { wmClass = win.get_wm_class(); } catch (e) {}
+            if (wmClass && this._geometryCache[wmClass]) {
+                log(`[Geometry] Legacy key hit: '${effective}' -> '${wmClass}'`);
+                effective = wmClass;
+            }
+        }
+
+        // SESSION IDENTITY FORK: the same app announces different WM_CLASS
+        // casing per session type (Wayland 'google-chrome' vs Xorg/Xwayland
+        // 'Google-chrome'), stranding entries saved under the other
+        // session. Bridge pure casing variants with a case-insensitive
+        // fallback. (Structurally different names like
+        // 'gnome-terminal-server' vs 'Gnome-terminal' cannot be bridged
+        // automatically and keep per-session entries.)
+        if (!this._geometryCache[effective]) {
+            const lower = appId.toLowerCase();
+            const variant = Object.keys(this._geometryCache).find(k =>
+                !k.startsWith('__') && k.toLowerCase() === lower);
+            if (variant) {
+                log(`[Geometry] Case-variant hit: '${appId}' -> '${variant}'`);
+                effective = variant;
+            }
+        }
+
         if (this._geometryCache[effective]) {
             this._beginRestore(win, data, effective);
             return true;
@@ -315,6 +454,7 @@ export class GeometryManager extends ExtensionComponent {
 
     _learnAlias(earlyId, finalId) {
         if (!earlyId || !finalId || earlyId.startsWith('__')) return;
+        if (this._isSyntheticId(earlyId) || this._isSyntheticId(finalId)) return;
         const aliases = this._geometryCache['__aliases__'] ??
             (this._geometryCache['__aliases__'] = {});
         if (aliases[earlyId] !== finalId) {
@@ -338,7 +478,7 @@ export class GeometryManager extends ExtensionComponent {
         data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
             attempt === 0 ? 0 : WM_CLASS_POLL_MS, () => {
                 data.timerId = 0;
-                if (!this._windowData.has(win) || data.restored) return GLib.SOURCE_REMOVE;
+                if (!this._isAlive(win) || data.restored) return GLib.SOURCE_REMOVE;
 
                 if (this._tryResolveRestore(win, data)) return GLib.SOURCE_REMOVE;
 
@@ -346,7 +486,7 @@ export class GeometryManager extends ExtensionComponent {
                 // restore is coming — stop hiding the window.
                 if (data.cloaked) {
                     let idNow = null;
-                    try { idNow = win.get_wm_class(); } catch (e) {}
+                    idNow = this._identityFor(win);
                     if (idNow && !this._geometryCache['__aliases__']?.[idNow])
                         this._reveal(win, data);
                 }
@@ -355,7 +495,7 @@ export class GeometryManager extends ExtensionComponent {
                     this._scheduleRestore(win, data, attempt + 1);
                 } else {
                     let appId = null;
-                    try { appId = win.get_wm_class(); } catch (e) {}
+                    appId = this._identityFor(win);
                     log(`[Geometry] No saved entry for '${appId ?? 'unknown'}' — tracking only`);
                     this._reveal(win, data);
                     this._settleLater(win, data);
@@ -397,23 +537,47 @@ export class GeometryManager extends ExtensionComponent {
         } catch (e) {}
 
         const geo = this._lookupGeometry(win, appId);
-        this._applyGeometry(win, appId, geo, data);
-        if (data.shownSeen) {
-            // Placement already ran — this apply is authoritative
-            this._reveal(win, data);
+
+        // NO GEOMETRY OPERATIONS DURING WINDOW CONSTRUCTION.
+        //
+        // Journal evidence (Jul 21): the session ended immediately after
+        // "Restoring firefox_firefox" -> ">> move_resize_frame", with no
+        // authoritative-apply line before it — i.e. from the EARLY apply,
+        // which runs synchronously inside the 'window-created' handler.
+        // Moving a window Mutter is still constructing, from inside its
+        // own signal emission, is re-entrancy into window management at
+        // the most fragile moment available.
+        //
+        // The early apply has been redundant since the authoritative
+        // post-first-frame apply landed; the cloak hides the wait. It is
+        // removed entirely. If the window is already mapped, the apply is
+        // still pushed out of the current signal emission via idle.
+        if (!data.mapped && !data.shownSeen) {
+            log(`[Geometry] Restore for ${appId} deferred to post-map apply`);
+            this._verifyRestore(win, data, appId, 0);
+            return;
         }
-        // else: the 'shown' handler reapplies post-placement and reveals
+
+        data.finalApplyDone = true;
+        this._deferApply(win, data, appId, geo, 0);
         this._verifyRestore(win, data, appId, 0);
     }
 
     _verifyRestore(win, data, appId, tries) {
-        data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, VERIFY_DELAY_MS, () => {
-            data.timerId = 0;
-            if (!this._windowData.has(win)) return GLib.SOURCE_REMOVE;
+        if (data.verifyTimerId) {
+            GLib.source_remove(data.verifyTimerId);
+            data.verifyTimerId = 0;
+        }
+        data.verifyTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, VERIFY_DELAY_MS, () => {
+            data.verifyTimerId = 0;
+            if (!this._isAlive(win)) return GLib.SOURCE_REMOVE;
 
             const geo = this._lookupGeometry(win, appId);
-            if (geo && tries < VERIFY_MAX_TRIES && !this._matchesGeometry(win, geo)) {
-                log(`[Geometry] ${appId} moved itself after restore; reapplying (${tries + 1}/${VERIFY_MAX_TRIES})`);
+            // X11 clients get ONE corrective pass: repeated configure
+            // requests are the other half of the Xwayland exposure.
+            const maxTries = this._isX11(win) ? 1 : VERIFY_MAX_TRIES;
+            if (geo && tries < maxTries && !this._matchesGeometry(win, geo)) {
+                log(`[Geometry] ${appId} moved itself after restore; reapplying (${tries + 1}/${maxTries})`);
                 // data omitted deliberately: verify corrections are INSTANT.
                 // Fading each retry made apps that re-assert their own size
                 // (Chrome) flash 2-4 times in place at launch.
@@ -439,8 +603,13 @@ export class GeometryManager extends ExtensionComponent {
     }
 
     _settleLater(win, data) {
-        data.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTLE_GRACE_MS, () => {
-            data.timerId = 0;
+        if (data.settleTimerId) {
+            GLib.source_remove(data.settleTimerId);
+            data.settleTimerId = 0;
+        }
+        data.settleTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTLE_GRACE_MS, () => {
+            data.settleTimerId = 0;
+            if (!this._isAlive(win)) return GLib.SOURCE_REMOVE;
             data.settled = true;
             return GLib.SOURCE_REMOVE;
         });
@@ -450,7 +619,7 @@ export class GeometryManager extends ExtensionComponent {
         try {
             if (this.getSettings().get_boolean('geometry-restore-workspace') &&
                 Number.isInteger(geo.ws) && !win.is_on_all_workspaces() &&
-                win.get_workspace()?.index() !== Math.min(geo.ws, 35))
+                win.get_workspace()?.index() !== geo.ws)
                 return false;
             if (geo.max) return isMaximized(win);
             if (isMaximized(win)) return false;
@@ -523,7 +692,13 @@ export class GeometryManager extends ExtensionComponent {
                 y = Math.max(wa.y, Math.min(y, wa.y + wa.height - h));
             }
         } catch (e) {}
-        return { x, y, w, h };
+
+        // Hard safety rail: X11 geometry fields are 16-bit signed. Values
+        // beyond that range have been implicated in Xwayland termination,
+        // and no legitimate window geometry ever needs them.
+        const lim = v => Math.max(-X11_COORD_LIMIT, Math.min(X11_COORD_LIMIT, Math.round(v || 0)));
+        const dim = v => Math.max(1, Math.min(X11_COORD_LIMIT, Math.round(v || 1)));
+        return { x: lim(x), y: lim(y), w: dim(w), h: dim(h) };
     }
 
     /**
@@ -581,7 +756,47 @@ export class GeometryManager extends ExtensionComponent {
      * restored geometry. The corners shadow is translation-bound to its
      * window, so it cloaks and reveals in sync automatically.
      */
+    /**
+     * AUTHORITATIVE POST-PLACEMENT APPLY. Journal evidence (Jul 20) showed
+     * the 'shown'-based apply never executing — the signal did not fire on
+     * this Mutter build, and every restore fell back to the visible verify
+     * correction. The apply is therefore anchored to the actor's
+     * 'first-frame' (a signal the shell itself relies on, guaranteed after
+     * placement), with 'shown' kept as a secondary trigger; whichever
+     * fires first wins, the other becomes a no-op.
+     */
+    _authoritativeApply(win, data, reason) {
+        if (!this._isAlive(win)) return;
+        data.mapped = true;
+
+        if (data.restored && !data.finalApplyDone) {
+            data.finalApplyDone = true;
+            // Deliberately NOT re-resolving the identity here: an identity
+            // that changes mid-launch (Xorg) would otherwise select a
+            // different entry than the restore used, applying two positions
+            // in sequence — the two-stage flight. The per-title slot is
+            // still refreshed inside _lookupGeometry.
+            const effective = data.restoredAs;
+            const geo = this._lookupGeometry(win, effective);
+            log(`[Geometry] Authoritative apply (${reason}) for ${effective} (cloaked=${data.cloaked})`);
+            // 'first-frame' and 'shown' are signal emissions as well, so
+            // this apply is deferred to a fresh main-loop iteration too.
+            if (geo) {
+                this._deferApply(win, data, effective, geo, 0);
+                return; // _deferApply reveals once the apply has landed
+            }
+        } else if (!data.restored) {
+            log(`[Geometry] ${reason} before restore resolved (cloaked=${data.cloaked})`);
+            return; // keep cloak: resolution may still land within deadline
+        }
+
+        this._reveal(win, data);
+    }
+
     _cloak(win, data) {
+        // X11 clients are never cloaked: extreme actor translation is
+        // implicated in the Xwayland termination that ends the session.
+        if (this._isX11(win)) return;
         try {
             const actor = win.get_compositor_private();
             if (!actor) return;
@@ -590,6 +805,7 @@ export class GeometryManager extends ExtensionComponent {
 
             data.cloakTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, CLOAK_MAX_MS, () => {
                 data.cloakTimerId = 0;
+                if (!this._isAlive(win)) return GLib.SOURCE_REMOVE;
                 // Identity never resolved in time — show the window where
                 // it spawned; if a restore lands later it uses the fade.
                 this._reveal(win, data);
@@ -612,11 +828,16 @@ export class GeometryManager extends ExtensionComponent {
             if (!actor) return;
             actor.translation_x = 0;
 
-            // If the shell's map animation is already over, an abrupt pop
-            // is jarring — soften with a short fade (opacity is
-            // uncontested once the map effect has finished).
-            const elapsed = (GLib.get_monotonic_time() - data.createdAt) / 1000;
-            if (elapsed > 300 && !actor.get_transition('opacity')) {
+            // GUARANTEED SOFT APPEARANCE. The map animation plays while
+            // the window is cloaked off-screen; apps that take ~300ms to
+            // paint their first frame (TextEditor) finish it before the
+            // reveal, so snapping translation on a fully opaque actor read
+            // as a teleport-pop. The old elapsed>300ms threshold sat
+            // exactly on that boundary. Now: if a live opacity transition
+            // (the map animation) is still running, let it provide the
+            // fade-in; otherwise ALWAYS fade in ourselves — no timing
+            // threshold to straddle.
+            if (!actor.get_transition('opacity')) {
                 actor.opacity = 0;
                 actor.ease({
                     opacity: 255,
@@ -697,13 +918,48 @@ export class GeometryManager extends ExtensionComponent {
             if (!this.getSettings().get_boolean('geometry-restore-workspace')) return;
             if (!Number.isInteger(geo.ws)) return;
             if (win.is_on_all_workspaces()) return;
+            const wsm = global.workspace_manager;
+            const count = wsm?.get_n_workspaces?.() ?? 1;
+            // Clamp to the existing set (+1 at most): a large stored index
+            // with append=true would otherwise spawn many workspaces.
+            const target = Math.max(0, Math.min(geo.ws, count));
             const current = win.get_workspace()?.index();
-            const target = Math.min(geo.ws, 35);
             if (current !== target) {
-                log(`[Geometry] Moving window to workspace ${target}`);
+                // X11 windows are excluded: change_workspace_by_index with
+                // append=true mutates the workspace set, which propagates
+                // X11 property updates to Xwayland — an unnecessary risk
+                // during the map sequence, and workspace placement is the
+                // least critical part of a restore.
+                if (this._isX11(win)) {
+                    log('[Geometry] Skipping workspace restore for X11 client');
+                    return;
+                }
+                this._trace(win, 'change_workspace_by_index', `${target}`);
                 win.change_workspace_by_index(target, true);
             }
         } catch (e) {}
+    }
+
+    /**
+     * Runs an apply OUTSIDE the current signal emission. Every window
+     * operation reaches Mutter from a fresh main-loop iteration, never
+     * from inside 'window-created', 'first-frame' or 'shown' handlers.
+     */
+    _deferApply(win, data, appId, geo, delayMs) {
+        if (!geo) return;
+        if (data.x11TimerId) {
+            GLib.source_remove(data.x11TimerId);
+            data.x11TimerId = 0;
+        }
+        const wait = delayMs || (this._isX11(win) ? X11_APPLY_DELAY_MS : 0);
+        data.x11TimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, wait, () => {
+            data.x11TimerId = 0;
+            if (!this._isAlive(win)) return GLib.SOURCE_REMOVE;
+            this._applyGeometry(win, appId, geo, null);
+            this._reveal(win, data);
+            this._verifyRestore(win, data, appId, 0);
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _applyGeometry(win, appId, geo, data = null) {
@@ -730,7 +986,11 @@ export class GeometryManager extends ExtensionComponent {
                     } catch (e) {
                         log(`[Geometry] Restoring ${appId} to ${t.x},${t.y} [${t.w}x${t.h}]`);
                     }
-                    const doMove = () => win.move_resize_frame(true, t.x, t.y, t.w, t.h);
+                    const doMove = () => {
+                        this._trace(win, 'move_resize_frame',
+                            `${t.x},${t.y} ${t.w}x${t.h}`);
+                        win.move_resize_frame(true, t.x, t.y, t.w, t.h);
+                    };
                     if (!geo.max && this._shouldAnimate(data))
                         this._fadeMove(win, before, t, doMove);
                     else
@@ -738,7 +998,7 @@ export class GeometryManager extends ExtensionComponent {
                 }
             }
             if (geo.max && !isMaximized(win)) {
-                log(`[Geometry] Restoring ${appId} maximized`);
+                this._trace(win, 'maximize');
                 maximize(win);
             }
             geo.last_seen = Date.now();
@@ -759,8 +1019,9 @@ export class GeometryManager extends ExtensionComponent {
 
         if (win.is_fullscreen()) return;
 
-        const appId = win.get_wm_class();
-        if (!appId || appId.startsWith('__')) return;
+        if (!this._isAlive(win)) return;
+        const appId = this._identityFor(win);
+        if (!appId || appId.startsWith('__') || this._isSyntheticId(appId)) return;
 
         // Dialogs/transients must never write into the app slot, even if
         // they were mis-typed as NORMAL at creation time.
@@ -849,6 +1110,43 @@ export class GeometryManager extends ExtensionComponent {
         } catch (e) {
             this._geometryCache = {};
             logError("[Geometry] Failed to parse cache", e);
+        }
+        this._purgeSyntheticIds();
+    }
+
+    /**
+     * Removes recycled 'window:N' ids written by earlier versions. Stores
+     * self-heal on load, so no manual clearing is required.
+     */
+    _purgeSyntheticIds() {
+        try {
+            let removed = 0;
+
+            for (const key of Object.keys(this._geometryCache)) {
+                if (this._isSyntheticId(key)) {
+                    delete this._geometryCache[key];
+                    removed++;
+                }
+            }
+
+            const aliases = this._geometryCache['__aliases__'];
+            if (aliases) {
+                for (const [from, to] of Object.entries(aliases)) {
+                    if (this._isSyntheticId(from) || this._isSyntheticId(to)) {
+                        delete aliases[from];
+                        removed++;
+                    }
+                }
+                if (Object.keys(aliases).length === 0)
+                    delete this._geometryCache['__aliases__'];
+            }
+
+            if (removed > 0) {
+                log(`[Geometry] Purged ${removed} recycled 'window:N' entries/aliases`);
+                this._queueSave();
+            }
+        } catch (e) {
+            logError('[Geometry] Purge failed', e);
         }
     }
 

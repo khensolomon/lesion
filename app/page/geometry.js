@@ -32,7 +32,15 @@ export function createGeometryUI() {
     });
     settings.bind('geometry-restore-workspace', wsRow, 'active', Gio.SettingsBindFlags.DEFAULT);
     settings.bind('geometry-enabled', wsRow, 'sensitive', Gio.SettingsBindFlags.GET);
+
+    const x11Row = new Adw.SwitchRow({
+        title: 'Manage X11 Windows',
+        subtitle: 'Applies to apps running through Xwayland. Disable if X11 apps destabilize the session'
+    });
+    settings.bind('geometry-manage-x11', x11Row, 'active', Gio.SettingsBindFlags.DEFAULT);
+    settings.bind('geometry-enabled', x11Row, 'sensitive', Gio.SettingsBindFlags.GET);
     mainGroup.add(wsRow);
+    mainGroup.add(x11Row);
 
     // --- SECTION 2: DATA LIST ---
     const dataGroup = new Adw.PreferencesGroup({
@@ -75,7 +83,11 @@ export function createGeometryUI() {
             console.error(e);
         }
 
-        const currentKeys = Object.keys(data).sort();
+        // Reserved internal keys (e.g. '__aliases__', the learned identity
+        // table) are not applications and must never appear as rows.
+        const currentKeys = Object.keys(data)
+            .filter(k => !k.startsWith('__'))
+            .sort();
         const currentKeySet = new Set(currentKeys);
 
         // 1. REMOVE STALE ROWS
@@ -207,7 +219,17 @@ export function createGeometryUI() {
     clearBtn.connect('clicked', () => {
         // Clearing settings will trigger the signal -> updateList()
         // updateList will see 0 keys -> loop activeRows and remove them all.
-        settings.set_string('geometry-data', '{}');
+        // Preserve the learned identity aliases ('__aliases__'): they are
+        // infrastructure (what makes Firefox/Chrome restores instant), not
+        // user geometry. Wiping them re-introduced visible late restores
+        // until every alias was re-learned.
+        let cleared = '{}';
+        try {
+            const cur = JSON.parse(settings.get_string('geometry-data'));
+            if (cur && cur['__aliases__'])
+                cleared = JSON.stringify({ '__aliases__': cur['__aliases__'] });
+        } catch (e) {}
+        settings.set_string('geometry-data', cleared);
     });
 
     clearRow.add_suffix(clearBtn);

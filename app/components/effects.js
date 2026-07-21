@@ -234,15 +234,34 @@ export class EffectsManager extends ExtensionComponent {
             return;
         }
 
-        // X11 clients (e.g. VSCode/Electron under Xwayland): the effect must
-        // live on the surface child, not the window actor.
-        let target = actor;
+        // X11 clients (e.g. Chrome/VSCode/Electron under Xwayland): the
+        // effect must live on the surface child, not the window actor.
+        //
+        // XWAYLAND SAFETY: Xwayland is itself a Wayland client of the
+        // compositor, so compositor-side operations on its surface actors
+        // can drop that connection — and losing it terminates the session
+        // ("Connection to xwayland lost"). 'effects-manage-x11' excludes
+        // X11 windows from effects entirely; it can be flipped from a TTY
+        // without loading the preferences UI.
+        let isX11 = false;
         try {
-            if (win.get_client_type &&
-                win.get_client_type() === Meta.WindowClientType.X11) {
-                target = actor.get_first_child() ?? actor;
-            }
+            isX11 = win.get_client_type &&
+                win.get_client_type() === Meta.WindowClientType.X11;
         } catch (e) {}
+
+        if (isX11) {
+            try {
+                if (!this.getSettings().get_boolean('effects-manage-x11')) {
+                    log('[Effects] Skipping X11 client (effects-manage-x11 is off)');
+                    return;
+                }
+            } catch (e) {}
+        }
+
+        let target = actor;
+        if (isX11) {
+            try { target = actor.get_first_child() ?? actor; } catch (e) {}
+        }
 
         // Corner machinery (offscreen effect + replacement shadow) only
         // when rounding is on; transparency alone needs just the signals.
@@ -291,10 +310,25 @@ export class EffectsManager extends ExtensionComponent {
      * window actor and geometry-bound to it.
      */
     _createShadow(actor) {
+        // INPUT TRANSPARENCY IS CRITICAL. St widgets are reactive by
+        // default, and this bin extends SHADOW_PADDING px beyond the window
+        // on every side — a reactive shadow is an invisible 80px click trap
+        // around each window, swallowing clicks aimed at windows behind it
+        // (first click eaten, second gets through: the reported
+        // "have to click 2-3 times" mouse issue).
         const shadow = new St.Bin({
             name: 'lesion-shadow',
             style: `padding: ${SHADOW_PADDING}px;`,
-            child: new St.Bin({ x_expand: true, y_expand: true }),
+            reactive: false,
+            can_focus: false,
+            track_hover: false,
+            child: new St.Bin({
+                x_expand: true,
+                y_expand: true,
+                reactive: false,
+                can_focus: false,
+                track_hover: false,
+            }),
         });
 
         try {
