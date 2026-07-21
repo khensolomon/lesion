@@ -2,6 +2,7 @@ import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
+import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { ExtensionComponent } from './base.js';
 import { log, logError } from '../util/logger.js';
@@ -14,6 +15,7 @@ export class PanelsManager extends ExtensionComponent {
         this._buttonSignals = new Map();
         this._boxSignals = []; 
         this._blurEffect = null;
+        this._blurActor = null;
         this._monitorsChangedId = 0;
         this._refreshTimeoutId = 0;
         this._settingsSignals = [];
@@ -193,6 +195,14 @@ export class PanelsManager extends ExtensionComponent {
 
     // --- Blur ---
     _removeBlur() {
+        if (this._blurActor) {
+            try {
+                if (this._isValid(this._blurActor))
+                    this._blurActor.destroy();
+            } catch (e) {}
+            this._blurActor = null;
+        }
+        // Legacy cleanup: earlier builds put the effect on Main.panel itself
         if (this._blurEffect) {
             if (this._isValid(Main.panel)) {
                 try {
@@ -214,15 +224,37 @@ export class PanelsManager extends ExtensionComponent {
 
         if (!this._isValid(Main.panel)) return;
 
-        if (!this._blurEffect) {
+        if (!this._blurActor || !this._isValid(this._blurActor)) {
+            this._removeBlur();
+
+            // Dedicated background actor: input-transparent by construction,
+            // and inserted BELOW the panel's contents so nothing it does can
+            // affect the buttons above it.
+            this._blurActor = new St.Widget({
+                name: 'lesion-panel-blur',
+                reactive: false,
+                can_focus: false,
+                track_hover: false,
+                x_expand: true,
+                y_expand: true,
+            });
+            this._blurActor.add_constraint(new Clutter.BindConstraint({
+                source: Main.panel,
+                coordinate: Clutter.BindCoordinate.ALL,
+            }));
+
             this._blurEffect = new Shell.BlurEffect({
                 brightness: 1.0,
-                radius: radius, 
-                mode: Shell.BlurMode.ACTOR
+                radius: radius,
+                // BACKGROUND blurs what is behind the actor. ACTOR mode
+                // blurred the panel's own icons and text.
+                mode: Shell.BlurMode.BACKGROUND,
             });
-            Main.panel.add_effect(this._blurEffect);
+            this._blurActor.add_effect(this._blurEffect);
+
+            Main.panel.insert_child_below(this._blurActor, null);
         } else {
-            this._blurEffect.radius = radius; 
+            this._blurEffect.radius = radius;
         }
     }
 

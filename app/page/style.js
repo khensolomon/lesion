@@ -13,11 +13,12 @@ export class StylePage extends Adw.PreferencesPage {
         GObject.registerClass(this);
     }
 
-    constructor() {
+    constructor(goToPage = null) {
         super();
-        
+
         this._settings = AppConfig.getSettings();
-        
+        this._goToPage = goToPage;
+
         this._initUI();
     }
 
@@ -239,7 +240,7 @@ export class StylePage extends Adw.PreferencesPage {
         this._settings.bind('panel-enabled', presetsGroup, 'sensitive', Gio.SettingsBindFlags.DEFAULT);
         this.add(presetsGroup);
 
-        if (AppConfig.debug || true) { 
+        if (AppConfig.debug) { 
             const copyRow = new Adw.ActionRow({
                 title: 'Dev: Export Config',
                 subtitle: 'Generate JSON configuration for new presets.'
@@ -355,6 +356,18 @@ export class StylePage extends Adw.PreferencesPage {
         
         // COMMIT BATCH
         this._settings.apply();
+
+        // The controls on this page read their values at construction, so
+        // after a preset writes new ones the page would keep showing the
+        // old state (colours in particular). Rebuilding the page re-reads
+        // everything, so what is displayed matches what was applied.
+        if (this._goToPage) {
+            try {
+                this._goToPage('panel-style');
+            } catch (e) {
+                console.error('Preset applied but page refresh failed', e);
+            }
+        }
     }
 
     _generateConfigJSON() {
@@ -525,5 +538,5 @@ export class StylePage extends Adw.PreferencesPage {
 
 // Backward compatibility wrapper
 export function createStyleUI(navigator, goToPage) {
-    return new StylePage();
+    return new StylePage(goToPage);
 }

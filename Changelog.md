@@ -3,6 +3,24 @@
 Notable changes to the Lesion extension. Version names follow `yy.mm.dd`
 (EGO `version-name` allows letters, numbers, spaces, and periods only).
 
+## 26.07.21.8 (version 45)
+
+### Panel: presets no longer break the panel
+- Applying any blur-enabled preset (all except Default) made every panel
+  button unclickable. Cause: Shell.BlurEffect was added directly to
+  Main.panel in ACTOR mode. That blurs the panel's OWN contents rather
+  than what is behind it, and an offscreen effect on the panel breaks
+  input picking for its children. The effect now lives on a dedicated
+  background actor — reactive: false, inserted below the panel contents,
+  size-bound to the panel — using BACKGROUND mode. Effects left on
+  Main.panel by earlier builds are removed on load.
+- Applying a preset now refreshes the page. Controls read their values at
+  construction, so the page kept displaying the previous state (most
+  visibly the panel background colour and gradient controls) even though
+  the settings had been written.
+- "Dev: Export Config" is no longer shown in normal builds: its
+  visibility check was `AppConfig.debug || true`.
+
 ## 26.07.21.7 (version 44)
 
 ### Window geometry: never move windows from inside signal emission
